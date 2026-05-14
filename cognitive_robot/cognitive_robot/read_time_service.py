@@ -83,9 +83,9 @@ class ReadTimeService(Node):
         self.declare_parameter('debug_save_dir', '~/ocr_debug')
         # Directory on the laptop where debug images are saved.
 
-        self.declare_parameter('cmd_vel_topic', '/mirte_base_controller/cmd_vel_unstamped')
+        self.declare_parameter('cmd_vel_topic', '/mirte_base_controller/cmd_vel')
         # Topic to publish rotation commands on.
-        # Real robot : /mirte_base_controller/cmd_vel_unstamped  (default)
+        # Real robot : /mirte_base_controller/cmd_vel
         # Gazebo     : /cmd_vel
 
         # ------------------------------------------------------------------ #
@@ -319,11 +319,19 @@ class ReadTimeService(Node):
             f'Rotating {degrees:+.1f}° at {speed} rad/s for {duration:.2f} s'
         )
 
-        self.cmd_vel_pub.publish(twist)
-        time.sleep(duration)
+        rate_hz = 10.0
+        dt = 1.0 / rate_hz
+        end_time = time.time() + duration
 
-        # Stop the robot by publishing a zero Twist.
-        self.cmd_vel_pub.publish(Twist())
+        while time.time() < end_time:
+            self.cmd_vel_pub.publish(twist)
+            time.sleep(dt)
+
+        # Send stop command multiple times to make sure robot stops
+        stop = Twist()
+        for _ in range(5):
+        self.cmd_vel_pub.publish(stop)
+        time.sleep(0.05)
 
     # ---------------------------------------------------------------------- #
     # OCR validation                                                           #

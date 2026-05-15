@@ -86,7 +86,13 @@ class ReadTimeService(Node):
         self.declare_parameter('cmd_vel_topic', '/mirte_base_controller/cmd_vel')
         # Topic to publish rotation commands on.
         # Real robot : /mirte_base_controller/cmd_vel
-        # Gazebo     : /cmd_vel
+        # Gazebo     : /cmd_vel  (twist_mux output, bypasses mux)
+        #              or /mirte_base_controller/cmd_vel_unstamped (twist_mux input)
+
+        self.declare_parameter('camera_topic', '/camera/color/image_raw')
+        # Camera topic to subscribe to.
+        # Real robot : /camera/color/image_raw
+        # Gazebo     : /camera/image_raw
 
         # ------------------------------------------------------------------ #
         # Callback group                                                        #
@@ -112,13 +118,15 @@ class ReadTimeService(Node):
         # Protects latest_frame: the camera callback and service callback run
         # in different threads — we need a lock so they don't corrupt each other.
 
+        camera_topic = self.get_parameter('camera_topic').get_parameter_value().string_value
         self.create_subscription(
             Image,
-            '/camera/color/image_raw',
+            camera_topic,
             self._camera_callback,
             10,
             callback_group=self._cb_group,
         )
+        self.get_logger().info(f'Subscribing to camera on: {camera_topic}')
 
         # ------------------------------------------------------------------ #
         # Velocity publisher (used to rotate the robot)                        #
@@ -330,8 +338,8 @@ class ReadTimeService(Node):
         # Send stop command multiple times to make sure robot stops
         stop = Twist()
         for _ in range(5):
-        self.cmd_vel_pub.publish(stop)
-        time.sleep(0.05)
+            self.cmd_vel_pub.publish(stop)
+            time.sleep(0.05)
 
     # ---------------------------------------------------------------------- #
     # OCR validation                                                           #

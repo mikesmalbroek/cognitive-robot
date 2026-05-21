@@ -1,0 +1,116 @@
+Commands voor met de echte robot
+Stap 1 — Netwerk (eenmalig per sessie)
+
+# Verbind laptop met hetzelfde WiFi als de robot
+export ROS_DOMAIN_ID=0
+Stap 2 — Verifieer dat de robot zichtbaar is
+
+ros2 topic list | grep camera
+Verwacht: /camera/color/image_raw — als dit er staat is de robot bereikbaar en draait de camera al.
+
+Als je niets ziet: SSH naar de robot en start de bringup:
+
+
+ssh mirte@172.20.10.7
+ros2 launch mirte_bringup minimal_master.launch.py
+Stap 3 — Start de service op de laptop
+
+source ~/ros2_ws/install/setup.bash
+ros2 run cognitive_robot read_time_service
+
+(Gazebo) -> 
+source ~/ros2_ws/install/setup.bash
+ros2 run cognitive_robot read_time_service \
+  --ros-args \
+  -p cmd_vel_topic:=/mirte_base_controller/cmd_vel_unstamped \
+  -p camera_topic:=/camera/image_raw
+
+  
+Stap 4 — Roep de service aan (tweede terminal)
+
+export ROS_DOMAIN_ID=0
+source ~/ros2_ws/install/setup.bash
+ros2 service call /read_time cognitive_robot_interfaces/srv/ReadTime
+
+# Verbinden met Mirte robot + ROS2 setup
+
+## 1. SSH verbinden met robot
+
+```bash
+ssh mirte@mirte.local
+```
+
+## 2. Op de robot: juiste ROS domain zetten
+
+```bash
+export ROS_DOMAIN_ID=4
+export ROS_LOCALHOST_ONLY=0
+
+source /opt/ros/humble/setup.bash
+```
+
+## 3. Check of ROS draait op robot
+
+```bash
+ros2 node list
+ros2 topic list | grep camera
+```
+
+## 4. Op laptop: zelfde ROS domain gebruiken
+
+```bash
+export ROS_DOMAIN_ID=4
+export ROS_LOCALHOST_ONLY=0
+
+source ~/ros2_ws/install/setup.bash
+```
+
+## 5. Check verbinding met robot
+
+```bash
+ros2 node list
+ros2 topic list
+```
+
+## 6. Start OCR service
+
+```bash
+ros2 run cognitive_robot read_time_service
+```
+
+## 7. In andere terminal: service aanroepen
+
+```bash
+export ROS_DOMAIN_ID=4
+export ROS_LOCALHOST_ONLY=0
+
+source ~/ros2_ws/install/setup.bash
+
+ros2 service call /read_time cognitive_robot_interfaces/srv/ReadTime
+```
+
+## 8. Debugging
+
+### Camera topics checken
+
+```bash
+ros2 topic list | grep camera
+```
+
+### Service zichtbaar?
+
+```bash
+ros2 service list | grep read
+```
+
+### Robot beweging testen
+
+```bash
+ros2 topic list | grep cmd_vel
+```
+
+### Handmatig bewegen
+
+```bash
+ros2 topic pub /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.1}, angular: {z: 0.0}}"
+```

@@ -38,7 +38,7 @@ dist_coeffs = np.zeros(5)
 marker_length = 0.15
 
 # ===== LOAD PHOTO =====
-frame = cv2.imread('local_script_tests/aruco/photos_for_aruco/stationA_skewed_02.png')
+frame = cv2.imread('src/cognitive_robot/local_script_tests/aruco/photos_for_aruco/stationA_skewed_02.png')
 
 # Check if the image loaded successfully
 if frame is None:

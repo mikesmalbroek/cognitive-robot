@@ -1,0 +1,28 @@
+Ja, je kunt dit gebruiken voor de mirte front camera — maar je hoeft de webcam_publisher node niet te gebruiken. Hier is het verschil:
+
+De tutorial is voor een laptop webcam:
+
+De webcam_publisher.py opent een laptop camera via OpenCV en publiceert op /laptop_camera/image_raw
+Dat heb je niet nodig voor de mirte robot
+Voor de mirte front camera doe je dit:
+
+De mirte robot publiceert z'n camerabeelden al zelf op een ROS 2 topic (waarschijnlijk iets als /mirte/camera/image_raw of /camera/image_raw). Je kunt de camera_calibration tool direct op dat topic aanwijzen.
+
+Stappenplan voor mirte:
+
+Sla stap 2-3 van de tutorial over (package aanmaken + webcam publisher) — de mirte heeft dat al
+Verbind met de mirte robot en zorg dat de camera topic actief is:
+
+ros2 topic list   # zoek het camera topic van de mirte
+Draai de calibratie tool met het juiste topic:
+
+ros2 run camera_calibration cameracalibrator \
+  --size 8x6 --square 0.024 \
+  --ros-args --remap image:=/MIRTE_CAMERA_TOPIC \
+             --remap camera:=/MIRTE_CAMERA_INFO_TOPIC
+Beweeg het schaakbord voor de camera zoals de tutorial beschrijft en sla het resultaat op
+Wat je nodig hebt:
+
+Een geprinte 8x6 schaakbord (0.024 m per vakje) — zelfde als in de tutorial
+Weten op welk topic de mirte front camera publiceert
+Weet je al wat het camera topic van de mirte robot is, of moet ik je helpen dat op te sporen?

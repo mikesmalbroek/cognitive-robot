@@ -77,8 +77,8 @@ STATION_MAP = {
 ARUCO_DICT = aruco.DICT_6X6_250
 
 # Physical size of the printed marker in metres
-# If you printed a 15 cm marker, use 0.15
-MARKER_LENGTH_METERS = 0.15
+# If you printed a 20 cm marker, use 0.20
+MARKER_LENGTH_METERS = 0.20
 
 # Placeholder camera calibration (estimates for a generic webcam)
 # TODO: replace with real calibration values from the MIRTE camera

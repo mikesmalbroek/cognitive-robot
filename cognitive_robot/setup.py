@@ -32,6 +32,9 @@ setup(
 
             # Debug tool — manually save camera frames to test the OCR offline.
             'make_photo_for_testing_algorithm = cognitive_robot.make_photo_for_testing_algorithm:main',
+
+            # One-shot ArUco stationsdetectie — pakt één frame en detecteert markers.
+            'detect_station_service = cognitive_robot.detect_station_service:main',
         ],
     },
 )

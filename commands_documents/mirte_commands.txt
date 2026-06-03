@@ -1,0 +1,59 @@
+Voor meer informatie:
+    https://docs.mirte.org/develop/doc/simulation/mirte_master_gazebo.html (website voor de mirte)
+
+Starting Gazebo:
+cd ~/ros2_ws
+source install/setup.bash
+ros2 launch mirte_gazebo gazebo_mirte_master_empty.launch.xml
+
+Starting the robot:
+Ride it with the keyboard:
+ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args --remap cmd_vel:=/mirte_base_controller/cmd_vel_unstamped
+
+Arm up:
+ros2 topic pub --once /mirte_master_arm_controller/joint_trajectory trajectory_msgs/msg/JointTrajectory "{joint_names: ['shoulder_pan_joint', 'shoulder_lift_joint', 'elbow_joint', 'wrist_joint'], points: [{positions: [0.0, 0.0, -1.56, 1.56], time_from_start:{sec: 3, nanosec: 0}}]}"
+
+
+Voorbeeld instructies voor starten van de robot (cognitive robot):
+Eerst verbinden met robot of gazebo (opstarten):
+    ros2 launch mirte_gazebo gazebo_mirte_master_empty.launch.xml
+cd ~/ros2_ws
+colcon build --packages-select cognitive_robot
+source install/setup.bash
+ros2 run cognitive_robot drive_and_arm
+
+
+
+***Starting the robot****:
+1. Connect to the wifi
+2. Open the IP on the browser: http://192.168.42.1:8000/
+3. connect robot to the wifi with the command: 
+	nmcli device wifi connect "SSID" password "PASSWORD"
+optional for wifi problems: website: http://192.168.42.1/
+4. connect your laptop to the same wifi
+5. In terminal: connect to the robot:
+	In the terminal: ssh mirte@172.20.10.7 (then you are in the robot)
+6. Clone your repository if needed:
+	git clone -b feature/camera-photos https://github.com/mikesmalbroek/cognitive_robot_spatial_ai_5.git
+
+
+
+
+
+opening/closing gripper:
+ros2 action send_goal /mirte_master_gripper_controller/gripper_cmd control_msgs/action/GripperCommand "{command: {position: 0.1}}"
+
+
+Make photos with the front camera:
+	source ~/ros2_ws/install/setup.bash
+	ros2 topic list
+Je zou /gripper_camera/image_raw moeten zien. Zo niet, check dan of ROS_DOMAIN_ID klopt:
+	export ROS_DOMAIN_ID=0   # zelfde waarde als ingesteld op de robot
+Start the node:
+	ros2 run cognitive_robot take_photo
+Als je code hebt gewijzigd sinds de laatste build, eerst opnieuw builden:
+	cd ~/ros2_ws && colcon build --packages-select cognitive_robot && source install/setup.bash
+
+
+
+

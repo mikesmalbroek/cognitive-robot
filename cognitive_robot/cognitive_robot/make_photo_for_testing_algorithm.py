@@ -23,7 +23,7 @@ import cv2
 SAVE_DIR = os.path.expanduser('~/photos')
 
 # ROS topic on which the robot's gripper camera publishes its frames.
-TOPIC = '/gripper_camera/image_raw'
+TOPIC = '/camera/color/image_raw'
 
 
 class TakePhoto(Node):

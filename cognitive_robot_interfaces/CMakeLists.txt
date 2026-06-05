@@ -11,6 +11,7 @@ find_package(rosidl_default_generators REQUIRED)
 # Add any future .msg or .srv files to this list.
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/ReadTime.srv"
+  "srv/DetectAbacus.srv"
 )
 
 ament_package()

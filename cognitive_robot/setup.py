@@ -32,6 +32,9 @@ setup(
 
             # Debug tool — manually save camera frames to test the OCR offline.
             'make_photo_for_testing_algorithm = cognitive_robot.make_photo_for_testing_algorithm:main',
+
+            # Service node — detects an abacus in the front camera using Roboflow.
+            'detect_abacus_service = cognitive_robot.detect_abacus_service:main',
         ],
     },
 )

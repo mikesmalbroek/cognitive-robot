@@ -81,7 +81,7 @@ class DetectAbacusService(Node):
         # Real robot : /camera/color/image_raw
         # Gazebo     : /camera/image_raw
 
-        self.declare_parameter('confidence_threshold', 0.5)
+        self.declare_parameter('confidence_threshold', 0.7)
         # Minimum Roboflow confidence (0.0–1.0) to count a detection as valid.
         # Detections below this score are ignored and detected=False is returned.
 

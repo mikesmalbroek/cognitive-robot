@@ -172,23 +172,28 @@ def detect_aruco(image):
     # Draw green borders around every detected marker
     aruco.drawDetectedMarkers(annotated, corners, ids)
 
-    # Estimate the 3D pose per marker.
-    # estimatePoseSingleMarkers is deprecated in OpenCV 4.7+, but still works.
-    # TODO: replace with solvePnP when upgrading to OpenCV 4.7+.
-    rvecs, tvecs, _ = aruco.estimatePoseSingleMarkers(
-        corners, MARKER_LENGTH_METERS, camera_matrix, dist_coeffs
-    )
+    # 3D corner positions of a flat marker centred at the origin (marker frame)
+    half = MARKER_LENGTH_METERS / 2.0
+    obj_points = np.array([
+        [-half,  half, 0],
+        [ half,  half, 0],
+        [ half, -half, 0],
+        [-half, -half, 0],
+    ], dtype=np.float32)
 
     results = []
     for i, marker_id in enumerate(ids):
         mid = int(marker_id[0])
 
+        # Estimate 3D pose with solvePnP (works in OpenCV 4.7+)
+        img_points = corners[i][0].astype(np.float32)
+        _, rvec, tvec = cv2.solvePnP(obj_points, img_points, camera_matrix, dist_coeffs)
+
         # Position from the translation vector
-        x, y, z = tvecs[i][0]
+        x, y, z = tvec.flatten()
 
         # Draw the 3D coordinate axes on the marker (R=X, G=Y, B=Z), 10 cm long
-        cv2.drawFrameAxes(annotated, camera_matrix, dist_coeffs,
-                          rvecs[i], tvecs[i], 0.1)
+        cv2.drawFrameAxes(annotated, camera_matrix, dist_coeffs, rvec, tvec, 0.1)
 
         # Compute yaw from the marker's normal vector (third column of R).
         # The marker's Z axis points outward from its face toward the camera.
@@ -203,7 +208,7 @@ def detect_aruco(image):
         #
         # This avoids the Euler angle ambiguity that occurs when roll ≈ ±π,
         # which caused the standard ZYX decomposition to always return yaw ≈ 0.
-        rotation_matrix, _ = cv2.Rodrigues(rvecs[i][0])
+        rotation_matrix, _ = cv2.Rodrigues(rvec)
         marker_normal = rotation_matrix[:, 2]
         yaw = float(np.arctan2(marker_normal[0], -marker_normal[2]))
 

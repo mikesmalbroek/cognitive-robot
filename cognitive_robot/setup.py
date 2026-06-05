@@ -35,6 +35,9 @@ setup(
 
             # One-shot ArUco stationsdetectie — pakt één frame en detecteert markers.
             'detect_station_service = cognitive_robot.detect_station_service:main',
+
+            # Service node — detects an abacus in the front camera using Roboflow.
+            'detect_abacus_service = cognitive_robot.detect_abacus_service:main',
         ],
     },
 )

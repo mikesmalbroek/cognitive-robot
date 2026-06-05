@@ -11,16 +11,12 @@
 ---
 # --- Response ---
 
-# True when the inference model found the abacus with sufficient confidence;
-# False when no detection met the confidence threshold, or when the camera
-# had no frame yet.
-bool detected
-
 # Confidence score returned by the Roboflow model (0.0 – 1.0).
-# Set to 0.0 when detected is False.
+# Set to 0.0 when no detection met the confidence threshold, or when the
+# camera had no frame yet.
 float32 confidence
 
 # Pixel coordinates of the bounding box centre in the camera image.
-# Both are set to 0 when detected is False.
+# Both are set to 0 when confidence is 0.0.
 int32 x
 int32 y

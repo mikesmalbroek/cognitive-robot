@@ -29,10 +29,9 @@ SERVICE PROVIDED
 ----------------
   /detect_abacus  (cognitive_robot_interfaces/srv/DetectAbacus)
       Request  : (empty)
-      Response : detected   (bool)
-                 confidence (float32)
-                 x          (int32)   pixel X of bounding box centre
-                 y          (int32)   pixel Y of bounding box centre
+      Response : confidence (float32)  0.0 means nothing detected
+                 x          (int32)    pixel X of bounding box centre
+                 y          (int32)    pixel Y of bounding box centre
 """
 
 import os
@@ -273,17 +272,16 @@ class DetectAbacusService(Node):
 
         Returns
         -------
-        tuple : (bool, float, int, int)
-            (detected, confidence, x, y)
+        tuple : (float, int, int)
+            (confidence, x, y)
 
-            detected   : True if a valid detection was found above threshold.
-            confidence : Confidence of the best prediction (0.0 if none found).
-            x          : Pixel X of the bounding box centre (0 if not detected).
-            y          : Pixel Y of the bounding box centre (0 if not detected).
+            confidence : Score of the best prediction (0.0 if nothing found).
+            x          : Pixel X of the bounding box centre (0 if confidence 0.0).
+            y          : Pixel Y of the bounding box centre (0 if confidence 0.0).
         """
         if not predictions:
             self.get_logger().info('No predictions returned by the API.')
-            return False, 0.0, 0, 0
+            return 0.0, 0, 0
 
         # Pick the prediction the model is most certain about.
         best = max(predictions, key=lambda p: p['confidence'])
@@ -293,11 +291,11 @@ class DetectAbacusService(Node):
         if best['confidence'] < threshold:
             self.get_logger().info(
                 f'Best confidence {best["confidence"]:.2f} is below '
-                f'threshold {threshold:.2f} — treating as not detected.'
+                f'threshold {threshold:.2f} — returning 0.0.'
             )
-            return False, float(best['confidence']), 0, 0
+            return 0.0, 0, 0
 
-        return True, float(best['confidence']), int(best['x']), int(best['y'])
+        return float(best['confidence']), int(best['x']), int(best['y'])
 
     # ---------------------------------------------------------------------- #
     # Service callback                                                         #
@@ -323,10 +321,9 @@ class DetectAbacusService(Node):
         ----------
         request  : DetectAbacus.Request   (empty — no fields)
         response : DetectAbacus.Response
-            detected   : bool
-            confidence : float32
-            x          : int32  (bounding box centre X, pixels)
-            y          : int32  (bounding box centre Y, pixels)
+            confidence : float32  (0.0 means nothing detected)
+            x          : int32    (bounding box centre X, pixels)
+            y          : int32    (bounding box centre Y, pixels)
 
         Returns
         -------
@@ -337,8 +334,7 @@ class DetectAbacusService(Node):
         # Step 1: grab the latest camera frame.
         frame = self._capture_frame()
         if frame is None:
-            self.get_logger().warn('No camera frame available yet — returning detected=False.')
-            response.detected   = False
+            self.get_logger().warn('No camera frame available yet — returning confidence=0.0.')
             response.confidence = 0.0
             response.x          = 0
             response.y          = 0
@@ -351,16 +347,15 @@ class DetectAbacusService(Node):
         predictions = self._run_inference(image_path)
 
         # Step 4: extract the highest-confidence detection.
-        detected, confidence, x, y = self._extract_best_detection(predictions)
+        confidence, x, y = self._extract_best_detection(predictions)
 
         # Step 5: fill in the service response.
-        response.detected   = detected
         response.confidence = confidence
         response.x          = x
         response.y          = y
 
         self.get_logger().info(
-            f'Result — detected={detected}, confidence={confidence:.2f}, x={x}, y={y}'
+            f'Result — confidence={confidence:.2f}, x={x}, y={y}'
         )
         return response
 

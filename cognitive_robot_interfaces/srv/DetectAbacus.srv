@@ -29,3 +29,11 @@ int32 bbox_height
 # 0.0 when no abacus detected or depth frame unavailable.
 float32 distance_m
 
+# Real-world position of the abacus relative to the camera in metres.
+# Calculated using image_geometry (pinhole camera model) + depth.
+#   x_m: positive = abacus is to the right of the camera centre.
+#   y_m: positive = abacus is below the camera centre.
+# Both are 0.0 when no abacus detected or camera_info not yet received.
+float32 x_m
+float32 y_m
+

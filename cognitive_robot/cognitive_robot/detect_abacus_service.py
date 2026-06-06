@@ -51,7 +51,8 @@ from cv_bridge import CvBridge
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
-from sensor_msgs.msg import Image
+from image_geometry import PinholeCameraModel
+from sensor_msgs.msg import CameraInfo, Image
 
 from inference_sdk import InferenceHTTPClient
 
@@ -157,6 +158,25 @@ class DetectAbacusService(Node):
         self.get_logger().info(f'Subscribing to depth on: {depth_topic}')
 
         # ------------------------------------------------------------------ #
+        # Camera model (image_geometry)                                        #
+        # ------------------------------------------------------------------ #
+        # PinholeCameraModel converts pixel coordinates + depth into real-world
+        # 3D positions. It reads the camera intrinsics (focal length, principal
+        # point, distortion) from the camera_info topic and is initialised once
+        # on the first incoming message.
+        self._camera_model = PinholeCameraModel()
+        self._camera_model_ready = False
+        # Flag so we only log "model ready" once instead of on every message.
+
+        self.create_subscription(
+            CameraInfo,
+            '/camera/color/camera_info',
+            self._camera_info_callback,
+            10,
+            callback_group=self._cb_group,
+        )
+
+        # ------------------------------------------------------------------ #
         # Roboflow inference client                                            #
         # ------------------------------------------------------------------ #
         # We create the client once here so it can be reused on every service
@@ -199,10 +219,30 @@ class DetectAbacusService(Node):
             self.latest_frame = frame
 
     def _depth_callback(self, msg):
-        """Cache the latest aligned depth frame (16UC1, values in mm)."""
+        """Cache the latest depth frame (16UC1, values in mm)."""
         frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
         with self._depth_frame_lock:
             self.latest_depth_frame = frame
+
+    def _camera_info_callback(self, msg):
+        """
+        Initialise the PinholeCameraModel from the colour camera_info.
+
+        Called automatically on every camera_info message, but the model only
+        needs to be set up once — the intrinsics don't change during a session.
+        After the first message the flag _camera_model_ready is set to True so
+        _project_to_3d knows it can safely use the model.
+        """
+        if not self._camera_model_ready:
+            self._camera_model.fromCameraInfo(msg)
+            self._camera_model_ready = True
+            self.get_logger().info(
+                f'Camera model ready — '
+                f'fx={self._camera_model.fx():.1f}, '
+                f'fy={self._camera_model.fy():.1f}, '
+                f'cx={self._camera_model.cx():.1f}, '
+                f'cy={self._camera_model.cy():.1f}'
+            )
 
     # ---------------------------------------------------------------------- #
     # Base functions                                                           #
@@ -417,6 +457,46 @@ class DetectAbacusService(Node):
             return 0.0
         return float(np.median(valid)) / 1000.0
 
+    def _project_to_3d(self, pixel_x, pixel_y, distance_m):
+        """
+        Convert a pixel coordinate + depth into a real-world 3D position.
+
+        Uses image_geometry.PinholeCameraModel which applies the full pinhole
+        camera model including lens distortion. The model must be initialised
+        first via _camera_info_callback.
+
+        How it works
+        ------------
+        1. projectPixelTo3dRay() shoots a ray from the camera origin through
+           the given pixel. The ray is a unit direction vector (dx, dy, dz).
+        2. Multiplying that ray by the measured depth gives the actual 3D
+           position of the point in the camera's coordinate frame.
+
+        Coordinate frame (camera optical frame)
+        ----------------------------------------
+          x_m : positive = to the right of the camera centre
+          y_m : positive = below the camera centre
+          z_m = distance_m (depth, already measured separately)
+
+        Parameters
+        ----------
+        pixel_x, pixel_y : int   pixel coordinates from Roboflow detection
+        distance_m       : float depth in metres from _sample_depth()
+
+        Returns
+        -------
+        tuple (float, float) — (x_m, y_m), or (0.0, 0.0) if model not ready.
+        """
+        if not self._camera_model_ready or distance_m == 0.0:
+            return 0.0, 0.0
+
+        # projectPixelTo3dRay returns a normalised direction vector.
+        # Scaling it by depth gives the real-world position.
+        ray = self._camera_model.projectPixelTo3dRay((pixel_x, pixel_y))
+        x_m = ray[0] * distance_m
+        y_m = ray[1] * distance_m
+        return float(x_m), float(y_m)
+
     # ---------------------------------------------------------------------- #
     # Service callback                                                         #
     # ---------------------------------------------------------------------- #
@@ -464,6 +544,8 @@ class DetectAbacusService(Node):
             response.bbox_width  = 0
             response.bbox_height = 0
             response.distance_m  = 0.0
+            response.x_m         = 0.0
+            response.y_m         = 0.0
             return response
 
         # Step 2: save the frame as a temporary JPEG so the API can read it.
@@ -482,6 +564,8 @@ class DetectAbacusService(Node):
         response.bbox_width  = bbox_width
         response.bbox_height = bbox_height
         response.distance_m  = 0.0
+        response.x_m         = 0.0
+        response.y_m         = 0.0
 
         if confidence == 0.0:
             return response
@@ -494,9 +578,13 @@ class DetectAbacusService(Node):
         else:
             self.get_logger().warn('No depth frame available — distance not measured.')
 
+        # Step 7: calculate real-world X/Y position using image_geometry.
+        response.x_m, response.y_m = self._project_to_3d(x, y, response.distance_m)
+
         self.get_logger().info(
-            f'Result — confidence={confidence:.2f}, x={x}, y={y}, '
-            f'distance={response.distance_m:.2f}m'
+            f'Result — confidence={confidence:.2f}, pixel=({x},{y}), '
+            f'distance={response.distance_m:.2f}m, '
+            f'position=({response.x_m:.2f}m, {response.y_m:.2f}m)'
         )
         return response
 

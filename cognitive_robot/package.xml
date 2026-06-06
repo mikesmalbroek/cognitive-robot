@@ -29,6 +29,9 @@
   <!-- Aligns depth image to color camera frame -->
   <depend>depth_image_proc</depend>
 
+  <!-- Converts pixel coordinates + depth to real-world 3D positions -->
+  <depend>image_geometry</depend>
+
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
   <test_depend>ament_pep257</test_depend>

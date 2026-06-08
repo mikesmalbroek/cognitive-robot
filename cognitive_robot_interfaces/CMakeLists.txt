@@ -12,6 +12,7 @@ find_package(rosidl_default_generators REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/ReadTime.srv"
   "srv/DetectAbacus.srv"
+  "srv/DetectStation.srv"
 )
 
 ament_package()

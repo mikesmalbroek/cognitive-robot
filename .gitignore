@@ -3,8 +3,15 @@ build/
 install/
 log/
 
-# Python cache
+# Python
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
 *.egg-info/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+*.swp

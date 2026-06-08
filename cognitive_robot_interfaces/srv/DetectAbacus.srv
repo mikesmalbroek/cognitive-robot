@@ -20,3 +20,20 @@ float32 confidence
 # Both are set to 0 when confidence is 0.0.
 int32 x
 int32 y
+
+# Bounding box dimensions in pixels. Both are 0 when confidence is 0.0.
+int32 bbox_width
+int32 bbox_height
+
+# Distance from the camera to the abacus in metres.
+# 0.0 when no abacus detected or depth frame unavailable.
+float32 distance_m
+
+# Real-world position of the abacus relative to the camera in metres.
+# Calculated using image_geometry (pinhole camera model) + depth.
+#   x_m: positive = abacus is to the right of the camera centre.
+#   y_m: positive = abacus is below the camera centre.
+# Both are 0.0 when no abacus detected or camera_info not yet received.
+float32 x_m
+float32 y_m
+

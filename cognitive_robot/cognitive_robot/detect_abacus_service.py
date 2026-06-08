@@ -2,7 +2,8 @@
 detect_abacus_service.py
 
 ROS2 service node that detects an abacus in the robot's front camera image
-using the Roboflow serverless inference API.
+using the Roboflow serverless inference API, and measures its distance and
+3D position using the depth camera.
 
 HOW IT FITS IN THE SYSTEM
 --------------------------
@@ -12,8 +13,13 @@ The task planner calls the /detect_abacus service (empty request). This node:
   2. Saves it as a temporary JPEG file on disk.
   3. Sends the image to the Roboflow serverless inference API.
   4. Picks the prediction with the highest confidence score.
-  5. Returns detected=True/False, the confidence score, and the pixel
-     coordinates (x, y) of the bounding box centre.
+  5. If the abacus is detected, uses DepthCameraMixin to measure:
+       - distance_m : depth to the abacus in metres
+       - x_m, y_m   : real-world lateral and vertical offset in metres
+  6. Returns confidence, pixel coordinates, bounding box, and 3D position.
+
+Depth camera logic lives in DepthCameraMixin (depth_utils.py) and is shared
+with DetectStationService so it only needs to be maintained in one place.
 
 WHY THIS RUNS ON THE LAPTOP (NOT THE ROBOT)
 --------------------------------------------
@@ -23,15 +29,22 @@ an internet connection and the inference_sdk package installed.
 
 TOPICS USED
 -----------
-  /camera/color/image_raw  (subscribe) — front camera from the robot
+  /camera/color/image_raw      (subscribe) — colour camera from the robot
+  /camera/depth/image_raw      (subscribe) — depth camera  (via DepthCameraMixin)
+  /camera/color/camera_info    (subscribe) — intrinsics    (via DepthCameraMixin)
 
 SERVICE PROVIDED
 ----------------
   /detect_abacus  (cognitive_robot_interfaces/srv/DetectAbacus)
       Request  : (empty)
-      Response : confidence (float32)  0.0 means nothing detected
-                 x          (int32)    pixel X of bounding box centre
-                 y          (int32)    pixel Y of bounding box centre
+      Response : confidence  (float32)  0.0 means nothing detected
+                 x           (int32)    pixel X of bounding box centre
+                 y           (int32)    pixel Y of bounding box centre
+                 bbox_width  (int32)    bounding box width in pixels
+                 bbox_height (int32)    bounding box height in pixels
+                 distance_m  (float32)  distance to abacus in metres (= z_m)
+                 x_m         (float32)  real-world right offset in metres
+                 y_m         (float32)  real-world down  offset in metres
 """
 
 import os
@@ -44,28 +57,33 @@ from cv_bridge import CvBridge
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image
 
 from inference_sdk import InferenceHTTPClient
 
 from cognitive_robot_interfaces.srv import DetectAbacus
+from cognitive_robot.depth_utils import DepthCameraMixin
 
 
-class DetectAbacusService(Node):
+class DetectAbacusService(Node, DepthCameraMixin):
     """
     ROS2 node that exposes the /detect_abacus service.
 
     On startup it:
       - Subscribes to the robot's front camera and caches every incoming frame.
+      - Sets up depth camera subscriptions via DepthCameraMixin.
       - Creates a Roboflow InferenceHTTPClient once (reused on every call).
       - Declares ROS2 parameters so behaviour can be tuned at launch time
         without editing this file.
 
     When the service is called it:
-      1. Captures the latest camera frame.
+      1. Captures the latest colour frame.
       2. Saves it to a temporary JPEG file.
       3. Sends it to the Roboflow API.
-      4. Extracts the best detection and fills in the response.
+      4. Extracts the best detection.
+      5. Measures depth and calculates 3D position via DepthCameraMixin.
+      6. Fills in and returns the response.
     """
 
     def __init__(self):
@@ -83,7 +101,6 @@ class DetectAbacusService(Node):
 
         self.declare_parameter('confidence_threshold', 0.7)
         # Minimum Roboflow confidence (0.0–1.0) to count a detection as valid.
-        # Detections below this score are ignored and detected=False is returned.
 
         self.declare_parameter('api_url', 'https://serverless.roboflow.com')
         # Base URL for the Roboflow serverless inference API.
@@ -91,48 +108,58 @@ class DetectAbacusService(Node):
         self.declare_parameter('api_key', '8U4Olre0d5v9lWGCeHHT')
         # Your Roboflow API key. Keep this secret in a production environment.
 
-        self.declare_parameter('model_id', 'abacus_recognition_v1/1')
-        # Roboflow model ID in the format  <project-slug>/<version-number>.
+        self.declare_parameter('model_id', 'abacus_recognition_v1/2')
+        # Roboflow model ID in the format <project-slug>/<version-number>.
+
+        self.declare_parameter('depth_topic', '/camera/depth/image_raw')
+        # Raw depth topic (uint16, values in mm).
+
+        self.declare_parameter('camera_info_topic', '/camera/color/camera_info')
+        # Camera info topic used to initialise the PinholeCameraModel.
+        # Real robot : /camera/color/camera_info
+        # Gazebo     : /camera/camera_info
 
         # ------------------------------------------------------------------ #
         # Callback group                                                       #
         # ------------------------------------------------------------------ #
         # ReentrantCallbackGroup lets the camera callback keep running while
         # the service callback is blocked waiting for the Roboflow HTTP response.
-        # Without this, a SingleThreadedExecutor would freeze the camera during
-        # every API call and latest_frame would go stale.
         self._cb_group = ReentrantCallbackGroup()
 
         # ------------------------------------------------------------------ #
-        # Camera subscription                                                  #
+        # Colour camera subscription                                           #
         # ------------------------------------------------------------------ #
         self.bridge = CvBridge()
-        # CvBridge converts ROS Image messages to OpenCV (NumPy) BGR arrays.
 
         self.latest_frame = None
-        # The most recent camera frame. Updated by _camera_callback on every
-        # incoming message. None until the first frame has arrived.
+        # The most recent colour camera frame, updated on every incoming message.
 
         self._frame_lock = threading.Lock()
-        # Protects latest_frame: the camera callback and the service callback
-        # run in different threads, so we need a lock to prevent data races.
+        # Protects latest_frame against concurrent access from camera and
+        # service callbacks running in different threads.
 
         camera_topic = self.get_parameter('camera_topic').get_parameter_value().string_value
         self.create_subscription(
             Image,
             camera_topic,
             self._camera_callback,
-            10,
+            qos_profile_sensor_data,
             callback_group=self._cb_group,
         )
         self.get_logger().info(f'Subscribing to camera on: {camera_topic}')
 
         # ------------------------------------------------------------------ #
+        # Depth camera subscriptions (via DepthCameraMixin)                   #
+        # ------------------------------------------------------------------ #
+        # Sets up depth image and camera_info subscriptions.
+        depth_topic       = self.get_parameter('depth_topic').get_parameter_value().string_value
+        camera_info_topic = self.get_parameter('camera_info_topic').get_parameter_value().string_value
+        self._setup_depth_subscriptions(self._cb_group, depth_topic, camera_info_topic)
+
+        # ------------------------------------------------------------------ #
         # Roboflow inference client                                            #
         # ------------------------------------------------------------------ #
-        # We create the client once here so it can be reused on every service
-        # call. Creating a new client every call would re-negotiate the
-        # connection each time and add unnecessary overhead.
+        # Created once here so the TCP connection is reused on every call.
         api_url = self.get_parameter('api_url').get_parameter_value().string_value
         api_key = self.get_parameter('api_key').get_parameter_value().string_value
         self._inference_client = InferenceHTTPClient(api_url=api_url, api_key=api_key)
@@ -155,7 +182,7 @@ class DetectAbacusService(Node):
 
     def _camera_callback(self, msg):
         """
-        Called automatically by ROS every time a new camera frame arrives.
+        Called automatically by ROS every time a new colour camera frame arrives.
 
         Converts the ROS Image message to a BGR OpenCV image and stores it
         in self.latest_frame so the service callback can pick it up later.
@@ -175,10 +202,7 @@ class DetectAbacusService(Node):
 
     def _capture_frame(self):
         """
-        Return a thread-safe copy of the most recent camera frame.
-
-        We copy the frame while holding the lock so that _camera_callback
-        cannot overwrite it in another thread while we are processing it.
+        Return a thread-safe copy of the most recent colour camera frame.
 
         Returns
         -------
@@ -208,8 +232,11 @@ class DetectAbacusService(Node):
         str
             Absolute path to the saved JPEG file.
         """
+        # Resize to 320x240 before saving — reduces upload size by 4x while
+        # keeping enough resolution for the Roboflow model to detect the abacus.
+        small = cv2.resize(frame, (320, 240), interpolation=cv2.INTER_AREA)
         path = os.path.join(tempfile.gettempdir(), 'detect_abacus_temp.jpg')
-        cv2.imwrite(path, frame)
+        cv2.imwrite(path, small)
         self.get_logger().debug(f'Temp image saved to: {path}')
         return path
 
@@ -235,8 +262,7 @@ class DetectAbacusService(Node):
         Parameters
         ----------
         image_path : str
-            Absolute path to the JPEG file to send (as returned by
-            _save_temp_image).
+            Absolute path to the JPEG file to send.
 
         Returns
         -------
@@ -252,8 +278,8 @@ class DetectAbacusService(Node):
             self.get_logger().debug(f'Roboflow returned {len(predictions)} prediction(s).')
             return predictions
         except Exception as exc:
-            # Log the error but do not crash the node — return an empty list
-            # so the service can still send a valid detected=False response.
+            # Log but do not crash — return empty list so the service can
+            # still send a valid detected=False response.
             self.get_logger().error(f'Roboflow API call failed: {exc}')
             return []
 
@@ -262,8 +288,8 @@ class DetectAbacusService(Node):
         Select the prediction with the highest confidence score.
 
         A detection is only accepted when its confidence is at or above the
-        configured threshold parameter. If no predictions arrive, or the best
-        one is below the threshold, this function returns detected=False.
+        configured threshold. If no predictions arrive, or the best one is
+        below the threshold, this function returns confidence=0.0.
 
         Parameters
         ----------
@@ -272,20 +298,15 @@ class DetectAbacusService(Node):
 
         Returns
         -------
-        tuple : (float, int, int)
-            (confidence, x, y)
-
-            confidence : Score of the best prediction (0.0 if nothing found).
-            x          : Pixel X of the bounding box centre (0 if confidence 0.0).
-            y          : Pixel Y of the bounding box centre (0 if confidence 0.0).
+        tuple : (float, int, int, int, int)
+            (confidence, x, y, bbox_width, bbox_height)
+            All zeros when nothing is detected.
         """
         if not predictions:
             self.get_logger().info('No predictions returned by the API.')
-            return 0.0, 0, 0
+            return 0.0, 0, 0, 0, 0
 
-        # Pick the prediction the model is most certain about.
         best = max(predictions, key=lambda p: p['confidence'])
-
         threshold = self.get_parameter('confidence_threshold').get_parameter_value().double_value
 
         if best['confidence'] < threshold:
@@ -293,9 +314,15 @@ class DetectAbacusService(Node):
                 f'Best confidence {best["confidence"]:.2f} is below '
                 f'threshold {threshold:.2f} — returning 0.0.'
             )
-            return 0.0, 0, 0
+            return 0.0, 0, 0, 0, 0
 
-        return float(best['confidence']), int(best['x']), int(best['y'])
+        return (
+            float(best['confidence']),
+            int(best['x']),
+            int(best['y']),
+            int(best['width']),
+            int(best['height']),
+        )
 
     # ---------------------------------------------------------------------- #
     # Service callback                                                         #
@@ -306,24 +333,32 @@ class DetectAbacusService(Node):
         Main service callback — called when the task planner calls /detect_abacus.
 
         This function is the 'director': it calls the base functions in order
-        and assembles the final response. It does not contain any heavy logic
-        itself; all real work is delegated to the base functions above.
+        and assembles the final response. All heavy logic is delegated to the
+        base functions above and to DepthCameraMixin.
 
         Execution order
         ---------------
-        1. _capture_frame()          → get the latest camera image
-        2. _save_temp_image(frame)   → write it to a temp JPEG file
-        3. _run_inference(path)      → send to Roboflow, get predictions
-        4. _extract_best_detection() → pick best result above threshold
-        5. Fill in response fields and return.
+        1. _capture_frame()                       → get the latest colour image
+        2. _save_temp_image(frame)                → write it to a temp JPEG file
+        3. _run_inference(path)                   → send to Roboflow, get predictions
+        4. _extract_best_detection(predictions)   → pick best result above threshold
+        5. _capture_depth_frame()                 → get the latest depth image
+        6. _sample_depth(depth_frame, x, y)       → median depth in metres
+        7. _project_to_3d(x, y, distance_m)       → real-world x_m, y_m, z_m
+        8. _save_depth_image(...)                 → save debug depth images
 
         Parameters
         ----------
         request  : DetectAbacus.Request   (empty — no fields)
         response : DetectAbacus.Response
-            confidence : float32  (0.0 means nothing detected)
-            x          : int32    (bounding box centre X, pixels)
-            y          : int32    (bounding box centre Y, pixels)
+            confidence  : float32  (0.0 means nothing detected)
+            x           : int32    (bounding box centre X, pixels)
+            y           : int32    (bounding box centre Y, pixels)
+            bbox_width  : int32    (bounding box width, pixels)
+            bbox_height : int32    (bounding box height, pixels)
+            distance_m  : float32  (distance to abacus in metres, = z_m)
+            x_m         : float32  (real-world right offset in metres)
+            y_m         : float32  (real-world down  offset in metres)
 
         Returns
         -------
@@ -331,13 +366,18 @@ class DetectAbacusService(Node):
         """
         self.get_logger().info('Received /detect_abacus request.')
 
-        # Step 1: grab the latest camera frame.
+        # Step 1: grab the latest colour camera frame.
         frame = self._capture_frame()
         if frame is None:
             self.get_logger().warn('No camera frame available yet — returning confidence=0.0.')
-            response.confidence = 0.0
-            response.x          = 0
-            response.y          = 0
+            response.confidence  = 0.0
+            response.x           = 0
+            response.y           = 0
+            response.bbox_width  = 0
+            response.bbox_height = 0
+            response.distance_m  = 0.0
+            response.x_m         = 0.0
+            response.y_m         = 0.0
             return response
 
         # Step 2: save the frame as a temporary JPEG so the API can read it.
@@ -347,15 +387,51 @@ class DetectAbacusService(Node):
         predictions = self._run_inference(image_path)
 
         # Step 4: extract the highest-confidence detection.
-        confidence, x, y = self._extract_best_detection(predictions)
+        confidence, x, y, bbox_width, bbox_height = self._extract_best_detection(predictions)
 
-        # Step 5: fill in the service response.
-        response.confidence = confidence
-        response.x          = x
-        response.y          = y
+        # Fill detection fields; depth fields default to 0.0.
+        response.confidence  = confidence
+        response.x           = x
+        response.y           = y
+        response.bbox_width  = bbox_width
+        response.bbox_height = bbox_height
+        response.distance_m  = 0.0
+        response.x_m         = 0.0
+        response.y_m         = 0.0
+
+        if confidence == 0.0:
+            return response
+
+        # Step 5 & 6: measure depth at the detection centre (via DepthCameraMixin).
+        depth_frame = self._capture_depth_frame()
+        if depth_frame is None:
+            self.get_logger().warn('No depth frame available — distance not measured.')
+            return response
+
+        # Roboflow ran on a 320x240 resized image, so its pixel coordinates are in
+        # that reduced space. The depth image is the original camera resolution.
+        # Scale back so depth sampling and 3D projection use the correct pixel.
+        scale_x = frame.shape[1] / 320.0
+        scale_y = frame.shape[0] / 240.0
+        depth_x = int(x * scale_x)
+        depth_y = int(y * scale_y)
+
+        response.distance_m = self._sample_depth(depth_frame, depth_x, depth_y, radius=30)
+
+        # Step 7: calculate real-world 3D position (via DepthCameraMixin).
+        response.x_m, response.y_m, _ = self._project_to_3d(depth_x, depth_y, response.distance_m)
+
+        # Step 8: save debug depth images.
+        self._save_depth_image(
+            depth_frame, depth_x, depth_y,
+            int(bbox_width * scale_x), int(bbox_height * scale_y),
+            label='abacus',
+        )
 
         self.get_logger().info(
-            f'Result — confidence={confidence:.2f}, x={x}, y={y}'
+            f'Result — confidence={confidence:.2f}, pixel=({x},{y}), '
+            f'distance={response.distance_m:.2f}m, '
+            f'position=({response.x_m:.2f}m, {response.y_m:.2f}m)'
         )
         return response
 
@@ -372,9 +448,6 @@ def main(args=None):
     ReentrantCallbackGroup (declared in __init__), this means the camera
     callback keeps updating latest_frame even while the service callback is
     blocked waiting for the Roboflow HTTP response.
-
-    A SingleThreadedExecutor (the rclpy.spin default) would block on the
-    HTTP call and camera frames would stop arriving during inference.
     """
     rclpy.init(args=args)
     node = DetectAbacusService()

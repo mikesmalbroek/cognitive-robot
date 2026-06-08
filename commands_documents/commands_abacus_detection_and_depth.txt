@@ -1,0 +1,35 @@
+Terminal 1 — robot bereikbaar maken:
+
+
+export ROS_DOMAIN_ID=4
+export ROS_LOCALHOST_ONLY=0
+source ~/ros2_ws/install/setup.bash
+ros2 topic list | grep camera
+Als je /camera/color/image_raw ziet → camera draait al, ga door naar Terminal 2.
+
+Als je niks ziet → SSH naar de robot en start de camera:
+
+
+ssh mirte@172.20.10.7
+ros2 launch mirte_bringup minimal_master.launch.py
+Terminal 2 — start alle nodes:
+
+
+export ROS_DOMAIN_ID=4
+export ROS_LOCALHOST_ONLY=0
+source ~/ros2_ws/install/setup.bash
+ros2 launch cognitive_robot demo.launch.py
+Terminal 3 — test de detectie + afstand:
+
+
+export ROS_DOMAIN_ID=4
+export ROS_LOCALHOST_ONLY=0
+source ~/ros2_ws/install/setup.bash
+ros2 run cognitive_robot call_detect_abacus
+Terminal 4 — sla depth foto op om te bekijken:
+
+
+export ROS_DOMAIN_ID=4
+export ROS_LOCALHOST_ONLY=0
+source ~/ros2_ws/install/setup.bash
+ros2 run cognitive_robot save_depth_photo

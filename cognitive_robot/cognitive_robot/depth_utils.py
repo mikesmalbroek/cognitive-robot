@@ -44,6 +44,7 @@ import cv2
 import numpy as np
 from cv_bridge import CvBridge
 from image_geometry import PinholeCameraModel
+from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import CameraInfo, Image
 
 
@@ -98,7 +99,7 @@ class DepthCameraMixin:
             Image,
             depth_topic,
             self._depth_callback,
-            10,
+            qos_profile_sensor_data,
             callback_group=cb_group,
         )
         self.get_logger().info(f'[DepthMixin] Subscribing to depth on: {depth_topic}')
@@ -107,7 +108,7 @@ class DepthCameraMixin:
             CameraInfo,
             camera_info_topic,
             self._camera_info_callback,
-            10,
+            qos_profile_sensor_data,
             callback_group=cb_group,
         )
         self.get_logger().info(f'[DepthMixin] Subscribing to camera_info on: {camera_info_topic}')
@@ -181,6 +182,20 @@ class DepthCameraMixin:
         valid = region[region > 0]
 
         if len(valid) == 0:
+            # Log what the depth image actually looks like to diagnose the problem.
+            all_valid = depth_frame[depth_frame > 0]
+            if len(all_valid) > 0:
+                self.get_logger().warn(
+                    f'[DepthMixin] No depth at ({x},{y}) radius={radius} '
+                    f'— depth frame has valid pixels elsewhere '
+                    f'(range {int(all_valid.min())}–{int(all_valid.max())} mm, '
+                    f'depth size={depth_frame.shape})'
+                )
+            else:
+                self.get_logger().warn(
+                    f'[DepthMixin] No depth at ({x},{y}) — depth frame is entirely zero '
+                    f'(size={depth_frame.shape})'
+                )
             return 0.0
         return float(np.median(valid)) / 1000.0
 

@@ -41,6 +41,7 @@ from geometry_msgs.msg import Twist
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image
 
 from cognitive_robot_interfaces.srv import ReadTime
@@ -123,7 +124,7 @@ class ReadTimeService(Node):
             Image,
             camera_topic,
             self._camera_callback,
-            10,
+            qos_profile_sensor_data,
             callback_group=self._cb_group,
         )
         self.get_logger().info(f'Subscribing to camera on: {camera_topic}')

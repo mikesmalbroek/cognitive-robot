@@ -9,7 +9,12 @@ ros2 launch mirte_gazebo gazebo_mirte_master_empty.launch.xml
 2. Use the demo.gazebo.launch.py file:
 
 ros2 launch cognitive_robot demo_gazebo.launch.py
+ros2 launch cognitive_robot demo.launch.py
 
+
+2.5 Moving the robot:
+- Ride it with the keyboard:
+ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args --remap cmd_vel:=/mirte_base_controller/cmd_vel_unstamped
 
 3. Call the services:
 
@@ -24,3 +29,17 @@ ros2 service call /detect_station cognitive_robot_interfaces/srv/DetectStation '
 - Time reading service 
 source ~/ros2_ws/install/setup.bash
 ros2 service call /read_time cognitive_robot_interfaces/srv/ReadTime
+
+
+- If connecting to the real robot you have to put this code in the fresh terminals
+when you made a code change:
+
+cd ~/ros2_ws
+colcon build --packages-select cognitive_robot
+source install/setup.bash
+
+- connecting to robot:
+export ROS_DOMAIN_ID=4
+ros2 topic list | grep camera
+
+

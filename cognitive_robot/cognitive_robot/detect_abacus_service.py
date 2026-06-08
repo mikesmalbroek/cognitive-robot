@@ -57,6 +57,7 @@ from cv_bridge import CvBridge
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image
 
 from inference_sdk import InferenceHTTPClient
@@ -142,7 +143,7 @@ class DetectAbacusService(Node, DepthCameraMixin):
             Image,
             camera_topic,
             self._camera_callback,
-            10,
+            qos_profile_sensor_data,
             callback_group=self._cb_group,
         )
         self.get_logger().info(f'Subscribing to camera on: {camera_topic}')
@@ -407,13 +408,25 @@ class DetectAbacusService(Node, DepthCameraMixin):
             self.get_logger().warn('No depth frame available — distance not measured.')
             return response
 
-        response.distance_m = self._sample_depth(depth_frame, x, y)
+        # Roboflow ran on a 320x240 resized image, so its pixel coordinates are in
+        # that reduced space. The depth image is the original camera resolution.
+        # Scale back so depth sampling and 3D projection use the correct pixel.
+        scale_x = frame.shape[1] / 320.0
+        scale_y = frame.shape[0] / 240.0
+        depth_x = int(x * scale_x)
+        depth_y = int(y * scale_y)
+
+        response.distance_m = self._sample_depth(depth_frame, depth_x, depth_y, radius=30)
 
         # Step 7: calculate real-world 3D position (via DepthCameraMixin).
-        response.x_m, response.y_m, _ = self._project_to_3d(x, y, response.distance_m)
+        response.x_m, response.y_m, _ = self._project_to_3d(depth_x, depth_y, response.distance_m)
 
         # Step 8: save debug depth images.
-        self._save_depth_image(depth_frame, x, y, bbox_width, bbox_height, label='abacus')
+        self._save_depth_image(
+            depth_frame, depth_x, depth_y,
+            int(bbox_width * scale_x), int(bbox_height * scale_y),
+            label='abacus',
+        )
 
         self.get_logger().info(
             f'Result — confidence={confidence:.2f}, pixel=({x},{y}), '

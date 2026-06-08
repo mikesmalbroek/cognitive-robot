@@ -14,7 +14,13 @@ ros2 launch cognitive_robot demo_gazebo.launch.py
 3. Call the services:
 
 - Abacus:
+source ~/ros2_ws/install/setup.bash
 ros2 service call /detect_abacus cognitive_robot_interfaces/srv/DetectAbacus '{}'
 
 - Station/AruCo:
+source ~/ros2_ws/install/setup.bash
 ros2 service call /detect_station cognitive_robot_interfaces/srv/DetectStation '{}'
+
+- Time reading service 
+source ~/ros2_ws/install/setup.bash
+ros2 service call /read_time cognitive_robot_interfaces/srv/ReadTime

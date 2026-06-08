@@ -38,6 +38,9 @@ setup(
 
             # Service node — detects an abacus in the front camera using Roboflow.
             'detect_abacus_service = cognitive_robot.detect_abacus_service:main',
+
+            # Interactive depth mapper — drive robot and register station locations.
+            'trial_depth = cognitive_robot.plan_nav.trial_depth:main',
         ],
     },
 )

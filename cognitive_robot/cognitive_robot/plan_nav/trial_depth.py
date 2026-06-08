@@ -141,8 +141,8 @@ class TrialDepthMapper(Node):
     def __init__(self):
         super().__init__("trial_depth_mapper")
 
-        self.declare_parameter("cmd_vel_topic", "/cmd_vel")
-        self.declare_parameter("camera_topic", "/camera/image_raw")
+        self.declare_parameter("cmd_vel_topic", "/mirte_base_controller/cmd_vel")
+        self.declare_parameter("camera_topic", "/camera/color/image_raw")
         self.declare_parameter("map_frame", "map")
         self.declare_parameter("camera_frame", DEFAULT_CAMERA_FRAME)
         self.declare_parameter("station_dir", os.getcwd())
@@ -425,7 +425,7 @@ class TrialDepthMapper(Node):
             self.status_text = "Detection already running..."
             return
 
-        if not self.detect_station_client.wait_for_service(timeout_sec=1.0):
+        if not self.detect_station_client.wait_for_service(timeout_sec=4.0):
             print("ERROR: /detect_station service is not available.")
             print("Start it with:")
             print("  ros2 launch cognitive_robot demo_gazebo.launch.py")

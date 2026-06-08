@@ -19,7 +19,7 @@ from cv_bridge import CvBridge
 
 import tf2_ros
 
-from cognitive_robot_interfaces.srv import DetectStation
+from cognitive_robot_interfaces.srv import DetectStation, DetectAbacus
 
 
 # =============================================================================
@@ -204,11 +204,15 @@ class TrialDepthMapper(Node):
         self.latest_frame = None
         self.latest_display_frame = None
 
-        self.status_text = "Ready. Press b to detect/register station."
+        self.status_text = "Ready. B: station  N: abacus"
         self.last_detection_text = "No detection yet."
+        self.last_abacus_text = "No abacus detection yet."
 
         self.pending_detection_future = None
         self.detection_request_active = False
+
+        self.pending_abacus_future = None
+        self.abacus_request_active = False
 
         self.cmd_pub = self.create_publisher(
             Twist,
@@ -228,6 +232,11 @@ class TrialDepthMapper(Node):
             "/detect_station"
         )
 
+        self.detect_abacus_client = self.create_client(
+            DetectAbacus,
+            "/detect_abacus"
+        )
+
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(
             self.tf_buffer,
@@ -241,6 +250,7 @@ class TrialDepthMapper(Node):
         self.cmd_timer = self.create_timer(0.05, self.publish_cmd_loop)
         self.display_timer = self.create_timer(0.03, self.display_loop)
         self.service_timer = self.create_timer(0.05, self.check_detection_future)
+        self.abacus_timer = self.create_timer(0.05, self.check_abacus_future)
 
         self.print_startup_info()
 
@@ -293,13 +303,14 @@ class TrialDepthMapper(Node):
             "A/D: left/right",
             "Q/E: rotate",
             "X: stop",
-            "B: depth detect + register station",
+            "B: detect + register station",
+            "N: detect abacus",
             "V: save map + quit",
             "ESC: quit no save",
         ]
 
         x = 15
-        y = h - 155
+        y = h - 175
 
         for i, line in enumerate(lines):
             cv2.putText(
@@ -334,8 +345,18 @@ class TrialDepthMapper(Node):
 
         cv2.putText(
             frame,
-            f"camera topic: {self.camera_topic}",
+            self.last_abacus_text,
             (15, 75),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (0, 200, 255),
+            2
+        )
+
+        cv2.putText(
+            frame,
+            f"camera topic: {self.camera_topic}",
+            (15, 100),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.45,
             (255, 255, 255),
@@ -345,7 +366,7 @@ class TrialDepthMapper(Node):
         cv2.putText(
             frame,
             f"camera frame: {self.camera_frame}",
-            (15, 95),
+            (15, 118),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.45,
             (255, 255, 255),
@@ -389,6 +410,10 @@ class TrialDepthMapper(Node):
         elif key == ord("b"):
             self.stop_robot()
             self.start_detect_station_request()
+
+        elif key == ord("n"):
+            self.stop_robot()
+            self.start_detect_abacus_request()
 
         elif key == ord("v"):
             self.stop_robot()
@@ -522,6 +547,80 @@ class TrialDepthMapper(Node):
         )
 
         self.register_station_from_service_response(response)
+
+    # -------------------------------------------------------------------------
+    # ABACUS DETECTION SERVICE
+    # -------------------------------------------------------------------------
+
+    def start_detect_abacus_request(self):
+        print()
+        print("=" * 80)
+        print("CALL /detect_abacus")
+        print("=" * 80)
+
+        if self.abacus_request_active:
+            print("Abacus request already active. Wait for it to finish.")
+            self.status_text = "Abacus detection already running..."
+            return
+
+        if not self.detect_abacus_client.wait_for_service(timeout_sec=1.0):
+            print("ERROR: /detect_abacus service is not available.")
+            print("=" * 80)
+            self.status_text = "/detect_abacus not available."
+            return
+
+        self.pending_abacus_future = self.detect_abacus_client.call_async(
+            DetectAbacus.Request()
+        )
+        self.abacus_request_active = True
+        self.status_text = "Calling /detect_abacus..."
+
+    def check_abacus_future(self):
+        if not self.abacus_request_active:
+            return
+
+        if self.pending_abacus_future is None:
+            self.abacus_request_active = False
+            return
+
+        if not self.pending_abacus_future.done():
+            return
+
+        future = self.pending_abacus_future
+        self.pending_abacus_future = None
+        self.abacus_request_active = False
+
+        if future.result() is None:
+            print("ERROR: /detect_abacus service call failed.")
+            print("=" * 80)
+            self.status_text = "Abacus service call failed."
+            return
+
+        self.handle_detect_abacus_response(future.result())
+
+    def handle_detect_abacus_response(self, response):
+        print()
+        if response.confidence <= 0.0:
+            print("No abacus detected by /detect_abacus.")
+            print("=" * 80)
+            self.status_text = "No abacus detected."
+            self.last_abacus_text = "No abacus detected."
+            return
+
+        print(f"Abacus detected!")
+        print(f"  Confidence : {response.confidence:.2f}")
+        print(f"  Pixel pos  : x={response.x}, y={response.y}")
+        print(f"  Bbox       : {response.bbox_width}x{response.bbox_height} px")
+        print(f"  Distance   : {response.distance_m:.3f} m")
+        print(f"  Camera pos : x={response.x_m:+.3f} m, y={response.y_m:+.3f} m")
+        print("=" * 80)
+
+        self.status_text = f"Abacus: conf={response.confidence:.2f} d={response.distance_m:.2f}m"
+        self.last_abacus_text = (
+            f"Abacus: conf={response.confidence:.2f} "
+            f"x={response.x_m:+.2f}m y={response.y_m:+.2f}m "
+            f"d={response.distance_m:.2f}m"
+        )
 
     # -------------------------------------------------------------------------
     # STATION REGISTRATION

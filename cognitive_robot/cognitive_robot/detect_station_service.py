@@ -190,12 +190,16 @@ def detect_aruco(image, camera_matrix=None, dist_coeffs=None):
     if dist_coeffs is None:
         dist_coeffs = np.zeros(5)
 
-    aruco_dict = aruco.getPredefinedDictionary(ARUCO_DICT)
-    params     = aruco.DetectorParameters()
-    detector   = aruco.ArucoDetector(aruco_dict, params)
-
-    annotated = image.copy()
-    corners, ids, _ = detector.detectMarkers(image)
+    if hasattr(aruco, 'ArucoDetector'):
+        aruco_dict = aruco.getPredefinedDictionary(ARUCO_DICT)
+        detector   = aruco.ArucoDetector(aruco_dict, aruco.DetectorParameters())
+        annotated  = image.copy()
+        corners, ids, _ = detector.detectMarkers(image)
+    else:
+        aruco_dict = aruco.Dictionary_get(ARUCO_DICT)
+        params     = aruco.DetectorParameters_create()
+        annotated  = image.copy()
+        corners, ids, _ = aruco.detectMarkers(image, aruco_dict, parameters=params)
 
     if ids is None:
         return [], annotated

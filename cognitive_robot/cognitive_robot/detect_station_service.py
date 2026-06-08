@@ -340,7 +340,7 @@ class DetectStationService(Node, DepthCameraMixin):
             Image,
             camera_topic,
             self._camera_callback,
-            10,
+            qos_profile_sensor_data,
             callback_group=self._cb_group,
         )
         self.get_logger().info(f'Subscribing to camera on: {camera_topic}')

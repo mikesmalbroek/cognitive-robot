@@ -259,6 +259,18 @@ class TrialDepthMapper(Node):
 
     def display_loop(self):
         if self.latest_frame is None:
+            placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
+            cv2.putText(
+                placeholder,
+                "Waiting for camera...",
+                (160, 240),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.0,
+                (255, 255, 255),
+                2,
+            )
+            cv2.imshow(WINDOW_NAME, placeholder)
+            cv2.waitKey(1)
             return
 
         frame = self.latest_frame.copy()
@@ -756,10 +768,13 @@ def main(args=None):
             rclpy.spin_once(node, timeout_sec=0.05)
 
     except KeyboardInterrupt:
-        node.get_logger().info("KeyboardInterrupt received.")
+        pass
 
     finally:
-        node.stop_robot()
+        try:
+            node.stop_robot()
+        except Exception:
+            pass
         node.destroy_node()
         cv2.destroyAllWindows()
 

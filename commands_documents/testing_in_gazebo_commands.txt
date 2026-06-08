@@ -1,0 +1,72 @@
+Terminal 1 — Gazebo opstarten (lege wereld)
+
+cd ~/spatial-ai
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+ros2 launch mirte_gazebo gazebo_mirte_master_empty.launch.xml
+Wacht tot Gazebo volledig geladen is.
+
+Terminal 2 — Stations spawnen (eenmalig, na Gazebo start)
+
+ros2 run gazebo_ros spawn_entity.py \
+  -entity station_a_laptop \
+  -file ~/.gazebo/models/station_a_laptop/model.sdf \
+  -x -1 -y 1.22 -z 0 \
+  -Y 1
+
+ros2 run gazebo_ros spawn_entity.py \
+  -entity station_b_box \
+  -file ~/.gazebo/models/station_b_box/model.sdf \
+  -x 1.0 -y -1.2 -z 0.0 \
+  -Y -1.5
+
+ros2 run gazebo_ros spawn_entity.py \
+  -entity rect_wall \
+  -database rect_wall \
+  -x 0 -y 0 -z 0
+
+Terminal 3 — Robot besturen
+
+source ~/ros2_ws/install/setup.bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard \
+  --ros-args --remap cmd_vel:=/mirte_base_controller/cmd_vel_unstamped
+
+Terminal 4 — Scripts uitvoeren
+
+ArUco station detecteren (one-shot):
+source ~/ros2_ws/install/setup.bash
+ros2 run cognitive_robot detect_station_service \
+  --ros-args -p camera_topic:=/camera/image_raw
+
+Abacus detectie service starten:
+source ~/ros2_ws/install/setup.bash
+ros2 run cognitive_robot detect_abacus_service \
+  --ros-args -p camera_topic:=/camera/image_raw
+
+Abacus detecteren (aanroepen):
+ros2 service call /detect_abacus cognitive_robot_interfaces/srv/DetectAbacus {}
+
+Klok lezen service starten:
+source ~/ros2_ws/install/setup.bash
+ros2 run cognitive_robot read_time_service \
+  --ros-args -p camera_topic:=/camera/image_raw
+
+Klok lezen (aanroepen):
+ros2 service call /read_time cognitive_robot_interfaces/srv/ReadTime {}
+
+
+
+hij werkte niet dus deze code:
+
+# Terminal 1 — Gazebo herstarten
+killall gzserver gzclient 2>/dev/null; sleep 2
+cd ~/spatial-ai
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+ros2 launch mirte_gazebo gazebo_mirte_master_empty.launch.xml
+
+# Terminal 2 — Stations spawnen
+ros2 run gazebo_ros spawn_entity.py \
+  -entity station_b_box \
+  -file ~/.gazebo/models/station_b_box/model.sdf \
+  -x 1.0 -y -1.2 -z 0.0 -Y -1.5

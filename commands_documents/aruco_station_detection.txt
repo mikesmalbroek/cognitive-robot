@@ -1,0 +1,113 @@
+ArUco Station Detection — Commands
+====================================
+
+What this script does:
+    Takes one photo with the robot's front camera and detects ArUco markers.
+    Returns which station is visible and its 3D position/orientation.
+    Runs on the laptop, uses the robot's camera stream via ROS2.
+
+Script: cognitive_robot/cognitive_robot/detect_station_service.py
+
+
+STEP 1 — Set up the network (once per session)
+-----------------------------------------------
+Connect the laptop to the same WiFi as the robot and set the ROS domain:
+
+    export ROS_DOMAIN_ID=0
+
+
+STEP 2 — Verify the robot is reachable
+----------------------------------------
+    ros2 topic list | grep camera
+
+Expected: /camera/color/image_raw
+If missing, SSH into the robot and start the bringup:
+
+    ssh mirte@mirte.local
+    ros2 launch mirte_bringup minimal_master.launch.py
+
+
+STEP 3 — Build (only needed after code changes)
+------------------------------------------------
+    cd ~/ros2_ws
+    colcon build --packages-select cognitive_robot
+    source install/setup.bash
+
+
+STEP 4 — Run the script (real robot)
+--------------------------------------
+    source ~/ros2_ws/install/setup.bash
+    ros2 run cognitive_robot detect_station_serviceros2 run cognitive_robot detect_station_service
+
+Expected output when a marker is found:
+    ==================================================
+    ARUCO DETECTION RESULT
+    ==================================================
+    Photo: /home/<you>/aruco_photos/aruco_20240601_143012_123456.jpg
+
+    1 marker(s) found:
+
+      Station      : Station A  (ID: 0)
+      Position (m) :  x=+0.012  y=-0.034  z=+0.823
+      Orientation  :  roll=+0.021  pitch=-0.015  yaw=+0.003  (rad)
+
+    ==================================================
+
+Expected output when no marker is visible:
+    No ArUco markers found in this frame.
+
+
+STEP 4 (alternative) — Run in Gazebo
+--------------------------------------
+    source ~/ros2_ws/install/setup.bash
+    ros2 run cognitive_robot detect_station_service \
+      --ros-args -p camera_topic:=/camera/image_raw
+
+
+PARAMETERS (optional)
+-----------------------
+  camera_topic   Camera topic to subscribe to
+                   default: /camera/color/image_raw
+                   Gazebo:  /camera/image_raw
+
+  save_dir       Directory where photos are saved
+                   default: ~/aruco_photos
+
+Example with custom parameters:
+    ros2 run cognitive_robot detect_station_service \
+      --ros-args \
+      -p camera_topic:=/camera/color/image_raw \
+      -p save_dir:=~/my_photo_folder
+
+
+DEBUGGING
+----------
+
+Check camera topic:
+    ros2 topic list | grep camera
+
+Verify the topic is publishing data:
+    ros2 topic hz /camera/color/image_raw
+
+View saved photos:
+    ls ~/aruco_photos/
+    eog ~/aruco_photos/   # or any other image viewer
+
+Check ROS_DOMAIN_ID:
+    echo $ROS_DOMAIN_ID
+    # Must be the same on the laptop and the robot
+
+
+ARUCO MARKERS
+--------------
+Marker ID 0  ->  Station A
+Marker ID 1  ->  Station B
+
+Markers were generated with:
+    local_script_tests/aruro/aruro_make_photos.py
+    Dictionary: DICT_6X6_250
+    Images in:  local_script_tests/aruro/aruro_codes/
+
+Print the markers and attach them at the stations. The physical size of the
+printed marker must match MARKER_LENGTH_METERS in detect_station_service.py
+(currently set to 0.15 m = 15 cm).

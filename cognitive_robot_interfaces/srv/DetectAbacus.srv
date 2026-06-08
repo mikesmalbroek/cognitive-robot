@@ -1,0 +1,39 @@
+# DetectAbacus.srv
+#
+# Service used by the task planner to check whether an abacus is visible
+# in the robot's front camera image.
+#
+# The request is intentionally empty: the caller triggers the service when
+# the robot is already positioned in front of the object. The node grabs
+# the latest camera frame internally.
+
+# --- Request (nothing needed) ---
+---
+# --- Response ---
+
+# Confidence score returned by the Roboflow model (0.0 – 1.0).
+# Set to 0.0 when no detection met the confidence threshold, or when the
+# camera had no frame yet.
+float32 confidence
+
+# Pixel coordinates of the bounding box centre in the camera image.
+# Both are set to 0 when confidence is 0.0.
+int32 x
+int32 y
+
+# Bounding box dimensions in pixels. Both are 0 when confidence is 0.0.
+int32 bbox_width
+int32 bbox_height
+
+# Distance from the camera to the abacus in metres.
+# 0.0 when no abacus detected or depth frame unavailable.
+float32 distance_m
+
+# Real-world position of the abacus relative to the camera in metres.
+# Calculated using image_geometry (pinhole camera model) + depth.
+#   x_m: positive = abacus is to the right of the camera centre.
+#   y_m: positive = abacus is below the camera centre.
+# Both are 0.0 when no abacus detected or camera_info not yet received.
+float32 x_m
+float32 y_m
+

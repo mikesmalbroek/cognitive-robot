@@ -1,0 +1,47 @@
+# DetectStation.srv
+#
+# Service used by the task planner to detect an ArUco station marker in the
+# robot's front camera image and return its identity and 3D position.
+#
+# The request is intentionally empty: the caller triggers the service when
+# the robot is already positioned in front of the station. The node grabs
+# the latest camera frame internally.
+
+# --- Request (nothing needed) ---
+---
+# --- Response ---
+
+# True when an ArUco marker was found in the camera frame.
+bool detected
+
+# ArUco marker ID (e.g. 0 = Station A, 1 = Station B).
+# 0 when detected is False.
+int32 marker_id
+
+# Human-readable station name derived from marker_id (e.g. 'Station A').
+# Empty string when detected is False.
+string station_name
+
+# Distance from the camera to the marker in metres, measured by the depth
+# camera. 0.0 when not detected or depth frame unavailable.
+float32 distance_m
+
+# Real-world position of the marker relative to the camera in metres.
+# Calculated using DepthCameraMixin (image_geometry pinhole model + depth).
+#   x_m: positive = marker is to the right of the camera centre.
+#   y_m: positive = marker is below the camera centre.
+#   z_m: positive = forward distance (equals distance_m).
+# All 0.0 when not detected or camera_info not yet received.
+float32 x_m
+float32 y_m
+float32 z_m
+
+# Horizontal rotation of the marker in radians, estimated from the ArUco
+# pose (solvePnP rotation matrix). This is the only value that comes from
+# ArUco — position (x_m, y_m, z_m) comes from the depth camera instead,
+# because solvePnP with estimated intrinsics is not accurate enough.
+#   0.0   = marker faces the camera squarely
+#   > 0.0 = marker rotated to the right (from camera's view)
+#   < 0.0 = marker rotated to the left
+# 0.0 when not detected.
+float32 yaw

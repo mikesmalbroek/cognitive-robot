@@ -32,6 +32,18 @@ setup(
 
             # Debug tool — manually save camera frames to test the OCR offline.
             'make_photo_for_testing_algorithm = cognitive_robot.make_photo_for_testing_algorithm:main',
+
+            # One-shot ArUco stationsdetectie — pakt één frame en detecteert markers.
+            'detect_station_service = cognitive_robot.detect_station_service:main',
+
+            # Service node — detects an abacus in the front camera using Roboflow.
+            'detect_abacus_service = cognitive_robot.detect_abacus_service:main',
+
+            # Interactive depth mapper — drive robot and register station locations.
+            'trial_depth = cognitive_robot.plan_nav.trial_depth:main',
+
+            # Test caller — calls /detect_abacus once and prints the result.
+            'call_detect_abacus = cognitive_robot.call_detect_abacus:main',
         ],
     },
 )

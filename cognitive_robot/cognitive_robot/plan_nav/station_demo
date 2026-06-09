@@ -1,0 +1,370 @@
+#!/usr/bin/env python3
+
+import math
+import os
+import time
+import yaml
+
+import rclpy
+from rclpy.node import Node
+from rclpy.action import ActionClient
+
+from nav2_msgs.action import NavigateToPose
+from action_msgs.msg import GoalStatus
+
+from cognitive_robot_interfaces.srv import ReadTime
+
+
+# --------------------------------------------------------------------------- #
+# Files saved by your station recorder
+# --------------------------------------------------------------------------- #
+STATION_A_FILE = "station_a_location.yaml"
+STATION_B_FILE = "station_b_location.yaml"
+
+# Service provided by read_time_service.py
+READ_TIME_SERVICE_NAME = "/read_time"
+
+# Give the robot/camera a moment to stop vibrating after Nav2 reaches Station A.
+SETTLE_AT_STATION_A_SEC = 1.0
+
+# Small pause after reading the clock before sending the Station B goal.
+WAIT_BEFORE_STATION_B_SEC = 1.0
+
+# If False, the robot stops at Station A when OCR fails.
+# If True, it still continues to Station B even when the time was not detected.
+CONTINUE_TO_STATION_B_IF_TIME_NOT_FOUND = False
+
+# Maximum time to wait for the /read_time service to appear.
+READ_TIME_SERVICE_WAIT_TIMEOUT_SEC = 20.0
+
+# Maximum time to wait for one OCR scan service call to finish.
+# This should be longer than read_time_service.py max_iterations * rotation/settle time.
+READ_TIME_CALL_TIMEOUT_SEC = 120.0
+
+
+def yaw_to_quaternion(yaw):
+    """
+    Convert planar yaw angle to quaternion.
+    """
+    qz = math.sin(yaw / 2.0)
+    qw = math.cos(yaw / 2.0)
+
+    return {
+        "x": 0.0,
+        "y": 0.0,
+        "z": qz,
+        "w": qw,
+    }
+
+
+def load_station_destination(yaml_file):
+    """
+    Load destination_pose from station YAML file.
+
+    Expected YAML structure:
+
+    destination_pose:
+      frame_id: "map"
+      x: ...
+      y: ...
+      z: ...
+      yaw_rad: ...
+    """
+    if not os.path.exists(yaml_file):
+        raise FileNotFoundError(f"Could not find station file: {yaml_file}")
+
+    with open(yaml_file, "r") as f:
+        data = yaml.safe_load(f)
+
+    station_name = data.get("station_name", yaml_file)
+
+    if "destination_pose" not in data:
+        raise KeyError(
+            f"{yaml_file} does not contain destination_pose. "
+            f"Press b again with the updated station recorder code."
+        )
+
+    dest = data["destination_pose"]
+
+    frame_id = dest.get("frame_id", "map")
+    x = float(dest["x"])
+    y = float(dest["y"])
+    z = float(dest.get("z", 0.0))
+    yaw = float(dest["yaw_rad"])
+
+    return {
+        "station_name": station_name,
+        "frame_id": frame_id,
+        "x": x,
+        "y": y,
+        "z": z,
+        "yaw": yaw,
+    }
+
+
+def time_digits_to_string(digits):
+    """
+    Convert [h1, h2, m1, m2] into 'HH:MM'.
+    """
+    if len(digits) != 4:
+        return "INVALID"
+
+    return f"{digits[0]}{digits[1]}:{digits[2]}{digits[3]}"
+
+
+class StationClockMission(Node):
+    def __init__(self):
+        super().__init__("station_clock_mission")
+
+        self.nav_client = ActionClient(
+            self,
+            NavigateToPose,
+            "/navigate_to_pose"
+        )
+
+        self.read_time_client = self.create_client(
+            ReadTime,
+            READ_TIME_SERVICE_NAME
+        )
+
+    # ---------------------------------------------------------------------- #
+    # Nav2 helpers
+    # ---------------------------------------------------------------------- #
+
+    def wait_for_nav2(self):
+        self.get_logger().info("Waiting for Nav2 /navigate_to_pose action server...")
+        self.nav_client.wait_for_server()
+        self.get_logger().info("Nav2 action server is available.")
+
+    def send_goal_and_wait(self, station_goal):
+        station_name = station_goal["station_name"]
+        frame_id = station_goal["frame_id"]
+        x = station_goal["x"]
+        y = station_goal["y"]
+        z = station_goal["z"]
+        yaw = station_goal["yaw"]
+
+        quat = yaw_to_quaternion(yaw)
+
+        goal_msg = NavigateToPose.Goal()
+        goal_msg.pose.header.frame_id = frame_id
+        goal_msg.pose.header.stamp = self.get_clock().now().to_msg()
+
+        goal_msg.pose.pose.position.x = x
+        goal_msg.pose.pose.position.y = y
+        goal_msg.pose.pose.position.z = z
+
+        goal_msg.pose.pose.orientation.x = quat["x"]
+        goal_msg.pose.pose.orientation.y = quat["y"]
+        goal_msg.pose.pose.orientation.z = quat["z"]
+        goal_msg.pose.pose.orientation.w = quat["w"]
+
+        self.get_logger().info("=" * 70)
+        self.get_logger().info(f"Sending goal to {station_name}")
+        self.get_logger().info(f"Frame : {frame_id}")
+        self.get_logger().info(f"x     : {x:+.3f} m")
+        self.get_logger().info(f"y     : {y:+.3f} m")
+        self.get_logger().info(f"yaw   : {math.degrees(yaw):+.1f} deg")
+        self.get_logger().info("=" * 70)
+
+        send_goal_future = self.nav_client.send_goal_async(
+            goal_msg,
+            feedback_callback=self.feedback_callback
+        )
+
+        rclpy.spin_until_future_complete(self, send_goal_future)
+        goal_handle = send_goal_future.result()
+
+        if goal_handle is None:
+            self.get_logger().error("Goal handle is None. Failed to send goal.")
+            return False
+
+        if not goal_handle.accepted:
+            self.get_logger().error(f"Goal to {station_name} was rejected by Nav2.")
+            return False
+
+        self.get_logger().info(f"Goal to {station_name} accepted.")
+
+        result_future = goal_handle.get_result_async()
+        rclpy.spin_until_future_complete(self, result_future)
+        result = result_future.result()
+
+        if result is None:
+            self.get_logger().error(f"No result received for {station_name}.")
+            return False
+
+        status = result.status
+
+        if status == GoalStatus.STATUS_SUCCEEDED:
+            self.get_logger().info(f"Successfully reached {station_name}.")
+            return True
+
+        if status == GoalStatus.STATUS_ABORTED:
+            self.get_logger().error(f"Navigation to {station_name} was aborted.")
+            return False
+
+        if status == GoalStatus.STATUS_CANCELED:
+            self.get_logger().error(f"Navigation to {station_name} was canceled.")
+            return False
+
+        self.get_logger().warn(
+            f"Navigation to {station_name} finished with status: {status}"
+        )
+        return False
+
+    def feedback_callback(self, feedback_msg):
+        feedback = feedback_msg.feedback
+
+        distance_remaining = feedback.distance_remaining
+        navigation_time = feedback.navigation_time.sec
+
+        self.get_logger().info(
+            f"Distance remaining: {distance_remaining:.3f} m | "
+            f"Navigation time: {navigation_time} s"
+        )
+
+    # ---------------------------------------------------------------------- #
+    # Clock OCR service helpers
+    # ---------------------------------------------------------------------- #
+
+    def wait_for_read_time_service(self):
+        self.get_logger().info(f"Waiting for {READ_TIME_SERVICE_NAME} service...")
+
+        start_time = time.time()
+        while rclpy.ok():
+            if self.read_time_client.wait_for_service(timeout_sec=1.0):
+                self.get_logger().info(f"{READ_TIME_SERVICE_NAME} service is available.")
+                return True
+
+            elapsed = time.time() - start_time
+            self.get_logger().warn(
+                f"Still waiting for {READ_TIME_SERVICE_NAME}... "
+                f"{elapsed:.1f}/{READ_TIME_SERVICE_WAIT_TIMEOUT_SEC:.1f} s"
+            )
+
+            if elapsed >= READ_TIME_SERVICE_WAIT_TIMEOUT_SEC:
+                self.get_logger().error(
+                    f"Timed out waiting for {READ_TIME_SERVICE_NAME}. "
+                    f"Start read_time_service.py first."
+                )
+                return False
+
+        return False
+
+    def call_read_time(self):
+        self.get_logger().info("Calling /read_time to detect the clock at Station A...")
+
+        request = ReadTime.Request()
+        future = self.read_time_client.call_async(request)
+
+        rclpy.spin_until_future_complete(
+            self,
+            future,
+            timeout_sec=READ_TIME_CALL_TIMEOUT_SEC
+        )
+
+        if not future.done():
+            self.get_logger().error(
+                f"/read_time did not finish within {READ_TIME_CALL_TIMEOUT_SEC:.1f} s."
+            )
+            return False, []
+
+        response = future.result()
+
+        if response is None:
+            self.get_logger().error("/read_time returned no response.")
+            return False, []
+
+        digits = list(response.time_digits)
+
+        if response.found:
+            self.get_logger().info(
+                f"Clock detected successfully: {time_digits_to_string(digits)} "
+                f"digits={digits}"
+            )
+            return True, digits
+
+        self.get_logger().warn("Clock was not detected by /read_time.")
+        return False, digits
+
+
+# --------------------------------------------------------------------------- #
+# Main mission
+# --------------------------------------------------------------------------- #
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    mission = StationClockMission()
+
+    try:
+        station_a_goal = load_station_destination(STATION_A_FILE)
+        station_b_goal = load_station_destination(STATION_B_FILE)
+
+        mission.get_logger().info("Loaded station destination files:")
+        mission.get_logger().info(f"  Station A file: {STATION_A_FILE}")
+        mission.get_logger().info(f"  Station B file: {STATION_B_FILE}")
+
+        mission.wait_for_nav2()
+
+        if not mission.wait_for_read_time_service():
+            return
+
+        # 1. Travel to Station A.
+        success_a = mission.send_goal_and_wait(station_a_goal)
+
+        if not success_a:
+            mission.get_logger().error(
+                "Failed to reach Station A. Not reading clock or continuing to Station B."
+            )
+            return
+
+        # 2. Detect/read the clock at Station A.
+        mission.get_logger().info(
+            f"Settling at Station A for {SETTLE_AT_STATION_A_SEC:.1f} s before OCR..."
+        )
+        time.sleep(SETTLE_AT_STATION_A_SEC)
+
+        time_found, time_digits = mission.call_read_time()
+
+        if not time_found and not CONTINUE_TO_STATION_B_IF_TIME_NOT_FOUND:
+            mission.get_logger().error(
+                "Clock detection failed. Stopping mission before Station B. "
+                "Set CONTINUE_TO_STATION_B_IF_TIME_NOT_FOUND=True if you want to continue anyway."
+            )
+            return
+
+        mission.get_logger().info(
+            f"Waiting {WAIT_BEFORE_STATION_B_SEC:.1f} s before going to Station B..."
+        )
+        time.sleep(WAIT_BEFORE_STATION_B_SEC)
+
+        # 3. Travel to Station B.
+        success_b = mission.send_goal_and_wait(station_b_goal)
+
+        if not success_b:
+            mission.get_logger().error("Failed to reach Station B.")
+            return
+
+        if time_found:
+            mission.get_logger().info(
+                f"Mission complete: Station A reached, clock={time_digits_to_string(time_digits)}, "
+                f"then Station B reached."
+            )
+        else:
+            mission.get_logger().info(
+                "Mission complete: Station A reached, clock not found, then Station B reached."
+            )
+
+    except Exception as e:
+        mission.get_logger().error(f"Station-clock mission failed: {e}")
+
+    finally:
+        mission.destroy_node()
+
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()

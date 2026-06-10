@@ -1,0 +1,15 @@
+material StationA/QR
+{
+  technique
+  {
+    pass
+    {
+      lighting off
+
+      texture_unit
+      {
+        texture qr.png
+      }
+    }
+  }
+}

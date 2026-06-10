@@ -1,0 +1,75 @@
+<?xml version="1.0"?>
+<sdf version="1.6">
+  <model name="station_a_laptop">
+    <static>false</static>
+
+    <link name="body">
+      <gravity>false</gravity>
+      <self_collide>false</self_collide>
+
+      <inertial>
+        <mass>1.0</mass>
+        <inertia>
+          <ixx>0.01</ixx>
+          <iyy>0.01</iyy>
+          <izz>0.01</izz>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyz>0</iyz>
+        </inertia>
+      </inertial>
+
+      <!-- Base -->
+      <collision name="base_collision">
+        <pose>0 0 0.0075 0 0 0</pose>
+        <geometry><box><size>0.36 0.23 0.015</size></box></geometry>
+      </collision>
+      <visual name="base_visual">
+        <pose>0 0 0.0075 0 0 0</pose>
+        <geometry><box><size>0.36 0.23 0.015</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+      </visual>
+
+      <!-- Screen -->
+      <collision name="screen_collision">
+        <pose>0 0.1125 0.13 0 0 0</pose>
+        <geometry><box><size>0.36 0.005 0.23</size></box></geometry>
+      </collision>
+      <visual name="screen_visual">
+        <pose>0 0.1125 0.13 0 0 0</pose>
+        <geometry><box><size>0.36 0.005 0.23</size></box></geometry>
+        <material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.02 0.02 0.02 1</diffuse></material>
+      </visual>
+
+      <!-- QR backing -->
+      <collision name="qr_collision">
+        <pose>0 0.1125 0.345 0 0 0</pose>
+        <geometry><box><size>0.20 0.005 0.20</size></box></geometry>
+      </collision>
+      <visual name="qr_backing">
+        <pose>0 0.1125 0.345 0 0 0</pose>
+        <geometry><box><size>0.20 0.005 0.20</size></box></geometry>
+        <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material>
+      </visual>
+
+      <!-- QR image, vertical -->
+      <visual name="qr_image">
+        <pose>0 0.109 0.345 1.5708 0 0</pose>
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>0.20 0.20</size>
+          </plane>
+        </geometry>
+        <material>
+          <script>
+            <uri>model://station_a_laptop/materials/scripts</uri>
+            <uri>model://station_a_laptop/materials/textures</uri>
+            <name>StationA/QR</name>
+          </script>
+        </material>
+      </visual>
+
+    </link>
+  </model>
+</sdf>

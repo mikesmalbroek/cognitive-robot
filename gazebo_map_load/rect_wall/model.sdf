@@ -1,0 +1,57 @@
+<?xml version="1.0"?>
+<sdf version="1.6">
+  <model name="boundary_4x5m">
+    <static>true</static>
+
+    <!-- Dimensions:
+         outer size: 4.0 m x 5.0 m
+         wall thickness: 0.01 m
+         wall height: 0.40 m
+    -->
+
+    <!-- Front wall -->
+    <link name="front_wall">
+      <pose>0 -2.5 0.2 0 0 0</pose>
+      <collision name="collision">
+        <geometry><box><size>4.0 0.01 0.4</size></box></geometry>
+      </collision>
+      <visual name="visual">
+        <geometry><box><size>4.0 0.01 0.4</size></box></geometry>
+      </visual>
+    </link>
+
+    <!-- Back wall -->
+    <link name="back_wall">
+      <pose>0 2.5 0.2 0 0 0</pose>
+      <collision name="collision">
+        <geometry><box><size>4.0 0.01 0.4</size></box></geometry>
+      </collision>
+      <visual name="visual">
+        <geometry><box><size>4.0 0.01 0.4</size></box></geometry>
+      </visual>
+    </link>
+
+    <!-- Left wall -->
+    <link name="left_wall">
+      <pose>-2.0 0 0.2 0 0 0</pose>
+      <collision name="collision">
+        <geometry><box><size>0.01 5.0 0.4</size></box></geometry>
+      </collision>
+      <visual name="visual">
+        <geometry><box><size>0.01 5.0 0.4</size></box></geometry>
+      </visual>
+    </link>
+
+    <!-- Right wall -->
+    <link name="right_wall">
+      <pose>2.0 0 0.2 0 0 0</pose>
+      <collision name="collision">
+        <geometry><box><size>0.01 5.0 0.4</size></box></geometry>
+      </collision>
+      <visual name="visual">
+        <geometry><box><size>0.01 5.0 0.4</size></box></geometry>
+      </visual>
+    </link>
+
+  </model>
+</sdf>

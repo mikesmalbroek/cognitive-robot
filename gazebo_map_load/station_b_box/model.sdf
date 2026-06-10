@@ -1,0 +1,58 @@
+<?xml version="1.0"?>
+<sdf version="1.6">
+  <model name="station_b_box">
+    <static>true</static>
+
+    <link name="body">
+
+      <!-- Box dimensions:
+           length x depth x height = 0.25 x 0.10 x 0.21 m
+           centered at z = 0.105 so it sits on the ground
+      -->
+
+      <collision name="box_collision">
+        <pose>0 0 0.105 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.25 0.10 0.21</size>
+          </box>
+        </geometry>
+      </collision>
+
+      <visual name="box_visual">
+        <pose>0 0 0.105 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.25 0.10 0.21</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>0.05 0.05 0.05 1</ambient>
+          <diffuse>0.05 0.05 0.05 1</diffuse>
+        </material>
+      </visual>
+
+      <!-- QR code on the long front face.
+           Face used: X-Z face at y = -0.050 m
+           QR size: 10 cm x 10 cm
+      -->
+      <visual name="qr_visual">
+        <pose>0 -0.051 0.105 1.5708 0 0</pose>
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>0.10 0.10</size>
+          </plane>
+        </geometry>
+        <material>
+          <script>
+            <uri>model://station_b_box/materials/scripts</uri>
+            <uri>model://station_b_box/materials/textures</uri>
+            <name>StationB/QR</name>
+          </script>
+        </material>
+      </visual>
+
+    </link>
+  </model>
+</sdf>

@@ -12,15 +12,26 @@ from rclpy.action import ActionClient
 from nav2_msgs.action import NavigateToPose
 from action_msgs.msg import GoalStatus
 
-from cognitive_robot_interfaces.srv import ReadTime
+from cognitive_robot_interfaces.srv import ReadTime, DetectAbacus
 
 
-# Filenames written by trial_depth.py — directory is set via the station_dir parameter.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+
+# --------------------------------------------------------------------------- #
+# Files saved by your station recorder
+# --------------------------------------------------------------------------- #
 STATION_A_FILENAME = "station_a_location.yaml"
 STATION_B_FILENAME = "station_b_location.yaml"
+ABACUS_FILENAME    = "abacus_location.yaml"
 
 # Service provided by read_time_service.py
 READ_TIME_SERVICE_NAME = "/read_time"
+
+# Service provided by detect_abacus_service.py
+DETECT_ABACUS_SERVICE_NAME = "/detect_abacus"
+
+# Maximum time to wait for the /detect_abacus service to appear.
+DETECT_ABACUS_SERVICE_WAIT_TIMEOUT_SEC = 10.0
 
 # Give the robot/camera a moment to stop vibrating after Nav2 reaches Station A.
 SETTLE_AT_STATION_A_SEC = 1.0
@@ -114,13 +125,8 @@ class StationClockMission(Node):
     def __init__(self):
         super().__init__("station_clock_mission")
 
-        self.declare_parameter(
-            'station_dir',
-            os.path.expanduser('~/mirte_ws/src/cognitive-robot/maps')
-        )
-        self.station_dir = os.path.expanduser(
-            self.get_parameter('station_dir').get_parameter_value().string_value
-        )
+        self.declare_parameter('station_dir', _HERE)
+        self.station_dir = self.get_parameter('station_dir').get_parameter_value().string_value
 
         self.nav_client = ActionClient(
             self,
@@ -131,6 +137,11 @@ class StationClockMission(Node):
         self.read_time_client = self.create_client(
             ReadTime,
             READ_TIME_SERVICE_NAME
+        )
+
+        self.detect_abacus_client = self.create_client(
+            DetectAbacus,
+            DETECT_ABACUS_SERVICE_NAME
         )
 
     # ---------------------------------------------------------------------- #
@@ -293,6 +304,54 @@ class StationClockMission(Node):
         self.get_logger().warn("Clock was not detected by /read_time.")
         return False, digits
 
+    # ---------------------------------------------------------------------- #
+    # Abacus detection service helpers
+    # ---------------------------------------------------------------------- #
+
+    def wait_for_detect_abacus_service(self):
+        self.get_logger().info(f"Waiting for {DETECT_ABACUS_SERVICE_NAME} service...")
+
+        start_time = time.time()
+        while rclpy.ok():
+            if self.detect_abacus_client.wait_for_service(timeout_sec=1.0):
+                self.get_logger().info(f"{DETECT_ABACUS_SERVICE_NAME} service is available.")
+                return True
+
+            elapsed = time.time() - start_time
+            if elapsed >= DETECT_ABACUS_SERVICE_WAIT_TIMEOUT_SEC:
+                self.get_logger().error(
+                    f"Timed out waiting for {DETECT_ABACUS_SERVICE_NAME}."
+                )
+                return False
+
+        return False
+
+    def call_detect_abacus(self):
+        self.get_logger().info("Calling /detect_abacus...")
+
+        future = self.detect_abacus_client.call_async(DetectAbacus.Request())
+        rclpy.spin_until_future_complete(self, future, timeout_sec=30.0)
+
+        if not future.done():
+            self.get_logger().error("/detect_abacus did not finish in time.")
+            return False, None
+
+        response = future.result()
+        if response is None:
+            self.get_logger().error("/detect_abacus returned no response.")
+            return False, None
+
+        if response.confidence <= 0.0:
+            self.get_logger().warn("Abacus not detected by /detect_abacus.")
+            return False, response
+
+        self.get_logger().info(
+            f"Abacus detected! confidence={response.confidence:.2f} "
+            f"distance={response.distance_m:.2f}m "
+            f"x={response.x_m:+.3f}m y={response.y_m:+.3f}m"
+        )
+        return True, response
+
 
 # --------------------------------------------------------------------------- #
 # Main mission
@@ -306,17 +365,32 @@ def main(args=None):
     try:
         station_a_file = os.path.join(mission.station_dir, STATION_A_FILENAME)
         station_b_file = os.path.join(mission.station_dir, STATION_B_FILENAME)
+        abacus_file    = os.path.join(mission.station_dir, ABACUS_FILENAME)
 
         station_a_goal = load_station_destination(station_a_file)
-        station_b_goal = load_station_destination(station_b_file)
+
+        # Station B destination: prefer abacus detection, fall back to ArUco.
+        try:
+            station_b_goal = load_station_destination(abacus_file)
+            station_b_source = "abacus detection"
+        except (FileNotFoundError, KeyError):
+            mission.get_logger().warn(
+                "abacus_location.yaml not found or missing destination_pose. "
+                "Falling back to station_b_location.yaml."
+            )
+            station_b_goal = load_station_destination(station_b_file)
+            station_b_source = "ArUco station detection (fallback)"
 
         mission.get_logger().info("Loaded station destination files:")
-        mission.get_logger().info(f"  Station A file: {station_a_file}")
-        mission.get_logger().info(f"  Station B file: {station_b_file}")
+        mission.get_logger().info(f"  Station A : {station_a_file}")
+        mission.get_logger().info(f"  Station B : {station_b_source}")
 
         mission.wait_for_nav2()
 
         if not mission.wait_for_read_time_service():
+            return
+
+        if not mission.wait_for_detect_abacus_service():
             return
 
         # 1. Travel to Station A.
@@ -324,11 +398,11 @@ def main(args=None):
 
         if not success_a:
             mission.get_logger().error(
-                "Failed to reach Station A. Not reading clock or continuing to Station B."
+                "Failed to reach Station A. Stopping mission."
             )
             return
 
-        # 2. Detect/read the clock at Station A.
+        # 2. Read the clock at Station A.
         mission.get_logger().info(
             f"Settling at Station A for {SETTLE_AT_STATION_A_SEC:.1f} s before OCR..."
         )
@@ -338,8 +412,8 @@ def main(args=None):
 
         if not time_found and not CONTINUE_TO_STATION_B_IF_TIME_NOT_FOUND:
             mission.get_logger().error(
-                "Clock detection failed. Stopping mission before Station B. "
-                "Set CONTINUE_TO_STATION_B_IF_TIME_NOT_FOUND=True if you want to continue anyway."
+                "Clock detection failed. Stopping mission. "
+                "Set CONTINUE_TO_STATION_B_IF_TIME_NOT_FOUND=True to continue anyway."
             )
             return
 
@@ -348,22 +422,29 @@ def main(args=None):
         )
         time.sleep(WAIT_BEFORE_STATION_B_SEC)
 
-        # 3. Travel to Station B.
+        # 3. Travel to Station B (abacus location).
         success_b = mission.send_goal_and_wait(station_b_goal)
 
         if not success_b:
             mission.get_logger().error("Failed to reach Station B.")
             return
 
-        if time_found:
-            mission.get_logger().info(
-                f"Mission complete: Station A reached, clock={time_digits_to_string(time_digits)}, "
-                f"then Station B reached."
-            )
-        else:
-            mission.get_logger().info(
-                "Mission complete: Station A reached, clock not found, then Station B reached."
-            )
+        # 4. Confirm abacus at Station B.
+        abacus_found, _ = mission.call_detect_abacus()
+
+        if not abacus_found:
+            mission.get_logger().warn("Abacus not detected at Station B.")
+
+        mission.get_logger().info("=" * 70)
+        mission.get_logger().info("MISSION COMPLETE")
+        mission.get_logger().info(
+            f"  Clock     : {time_digits_to_string(time_digits) if time_found else 'not found'}"
+        )
+        mission.get_logger().info(f"  Station B : reached via {station_b_source}")
+        mission.get_logger().info(
+            f"  Abacus    : {'confirmed' if abacus_found else 'not detected at Station B'}"
+        )
+        mission.get_logger().info("=" * 70)
 
     except Exception as e:
         mission.get_logger().error(f"Station-clock mission failed: {e}")

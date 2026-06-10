@@ -108,7 +108,7 @@ class DetectAbacusService(Node, DepthCameraMixin):
         self.declare_parameter('api_key', '8U4Olre0d5v9lWGCeHHT')
         # Your Roboflow API key. Keep this secret in a production environment.
 
-        self.declare_parameter('model_id', 'abacus_recognition_v1/2')
+        self.declare_parameter('model_id', 'abacus_recognition_v1/3')
         # Roboflow model ID in the format <project-slug>/<version-number>.
 
         self.declare_parameter('depth_topic', '/camera/depth/image_raw')

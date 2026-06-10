@@ -7,22 +7,29 @@ import cv2
 import numpy as np
 
 
-MAP_YAML = "trial_map.yaml"
+_HERE = os.path.dirname(os.path.abspath(__file__))
+
+MAP_YAML = os.path.join(_HERE, "auto_map.yaml")
 
 STATION_FILES = [
     {
-        "yaml": "station_a_location.yaml",
+        "yaml": os.path.join(_HERE, "station_a_location.yaml"),
         "label": "Station A",
         "color": (0, 0, 255),      # red in BGR
     },
     {
-        "yaml": "station_b_location.yaml",
+        "yaml": os.path.join(_HERE, "station_b_location.yaml"),
         "label": "Station B",
         "color": (255, 0, 0),      # blue in BGR
     },
+    {
+        "yaml": os.path.join(_HERE, "abacus_location.yaml"),
+        "label": "Abacus",
+        "color": (0, 255, 0),      # green in BGR
+    },
 ]
 
-OUTPUT_IMAGE = "trial_map_with_stations_and_destinations.png"
+OUTPUT_IMAGE = os.path.join(_HERE, "trial_map_with_stations_and_destinations.png")
 
 # Increase this to make the final displayed/saved map larger
 DISPLAY_SCALE = 6

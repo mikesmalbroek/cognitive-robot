@@ -191,7 +191,7 @@ Stop SLAM (Terminal 2) and Teleop (Terminal 4) before starting. Keep RViz open.
 **Before you start — copy your map to the robot** *(run once from a `[LAPTOP]` terminal)*:
 ```bash
 scp ~/mirte_ws/src/cognitive-robot/maps/my_map.yaml mirte@10.121.167.158:/home/mirte/mirte_ws/src/mirte_navigation/maps/
-scp ~/mirte_ws/src/cognitive-robot/maps/my_map.pgm mirte@10.121.167.158:/home/mirte/mirte_ws/src/mirte_navigation/maps/
+scp ~/mirte_ws/src/cognitive-robot/maps/my_map.pgm mirte@10.121.167.158:/home/mirte/mirte_ws/sc/mirrte_navigation/maps/
 ```
 
 **Update the map path on the robot** *(run once from a `[ROBOT]` terminal)*:

@@ -5,6 +5,8 @@
   Source elk terminal:
     source /opt/ros/humble/setup.bash
     source ~/ros2_ws/install/setup.bash
+    export ROS_DOMAIN_ID=4
+
 
   ROS_DOMAIN_ID voor echte robot: export ROS_DOMAIN_ID=4
 ================================================================================
@@ -36,6 +38,11 @@ rviz2
 
 --- Terminal 4: Teleoperation ---
 ros2 run teleop_twist_keyboard teleop_twist_keyboard
+
+Echte Robot: 
+ros2 run teleop_twist_keyboard teleop_twist_keyboard \
+  --ros-args -r /cmd_vel:=/mirte_base_controller/cmd_vel
+
 
 --- Terminal 5: Kaart opslaan ---
 ros2 run nav2_map_server map_saver_cli -f ~/ros2_ws/src/cognitive_robot/maps/my_map

@@ -361,13 +361,22 @@ def main(args=None):
 
     try:
         station_a_goal = load_station_destination(STATION_A_FILE)
-        abacus_goal    = load_station_destination(ABACUS_FILE)
-        station_b_goal = load_station_destination(STATION_B_FILE)
+
+        # Station B destination: prefer abacus detection, fall back to ArUco.
+        try:
+            station_b_goal = load_station_destination(ABACUS_FILE)
+            station_b_source = "abacus detection"
+        except (FileNotFoundError, KeyError):
+            mission.get_logger().warn(
+                "abacus_location.yaml not found or missing destination_pose. "
+                "Falling back to station_b_location.yaml."
+            )
+            station_b_goal = load_station_destination(STATION_B_FILE)
+            station_b_source = "ArUco station detection (fallback)"
 
         mission.get_logger().info("Loaded station destination files:")
         mission.get_logger().info(f"  Station A : {STATION_A_FILE}")
-        mission.get_logger().info(f"  Abacus    : {ABACUS_FILE}")
-        mission.get_logger().info(f"  Station B : {STATION_B_FILE}")
+        mission.get_logger().info(f"  Station B : {station_b_source}")
 
         mission.wait_for_nav2()
 
@@ -382,11 +391,11 @@ def main(args=None):
 
         if not success_a:
             mission.get_logger().error(
-                "Failed to reach Station A. Not reading clock or continuing."
+                "Failed to reach Station A. Stopping mission."
             )
             return
 
-        # 2. Detect/read the clock at Station A.
+        # 2. Read the clock at Station A.
         mission.get_logger().info(
             f"Settling at Station A for {SETTLE_AT_STATION_A_SEC:.1f} s before OCR..."
         )
@@ -402,41 +411,32 @@ def main(args=None):
             return
 
         mission.get_logger().info(
-            f"Waiting {WAIT_BEFORE_STATION_B_SEC:.1f} s before going to abacus..."
+            f"Waiting {WAIT_BEFORE_STATION_B_SEC:.1f} s before going to Station B..."
         )
         time.sleep(WAIT_BEFORE_STATION_B_SEC)
 
-        # 3. Travel to the abacus.
-        success_abacus = mission.send_goal_and_wait(abacus_goal)
-
-        if not success_abacus:
-            mission.get_logger().error("Failed to reach abacus location.")
-            return
-
-        # 4. Detect the abacus at its location.
-        abacus_found, _ = mission.call_detect_abacus()
-
-        if not abacus_found:
-            mission.get_logger().warn("Abacus not detected at its location. Continuing to Station B.")
-
-        time.sleep(WAIT_BEFORE_STATION_B_SEC)
-
-        # 5. Travel to Station B.
+        # 3. Travel to Station B (abacus location).
         success_b = mission.send_goal_and_wait(station_b_goal)
 
         if not success_b:
             mission.get_logger().error("Failed to reach Station B.")
             return
 
+        # 4. Confirm abacus at Station B.
+        abacus_found, _ = mission.call_detect_abacus()
+
+        if not abacus_found:
+            mission.get_logger().warn("Abacus not detected at Station B.")
+
         mission.get_logger().info("=" * 70)
         mission.get_logger().info("MISSION COMPLETE")
         mission.get_logger().info(
-            f"  Clock      : {time_digits_to_string(time_digits) if time_found else 'not found'}"
+            f"  Clock     : {time_digits_to_string(time_digits) if time_found else 'not found'}"
         )
+        mission.get_logger().info(f"  Station B : reached via {station_b_source}")
         mission.get_logger().info(
-            f"  Abacus     : {'detected' if abacus_found else 'not detected'}"
+            f"  Abacus    : {'confirmed' if abacus_found else 'not detected at Station B'}"
         )
-        mission.get_logger().info("  Station B  : reached")
         mission.get_logger().info("=" * 70)
 
     except Exception as e:

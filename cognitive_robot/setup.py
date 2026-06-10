@@ -44,6 +44,9 @@ setup(
 
             # Test caller — calls /detect_abacus once and prints the result.
             'call_detect_abacus = cognitive_robot.call_detect_abacus:main',
+
+            # Phase 2 autonomous mission — navigate to Station A, read clock, go to Station B.
+            'station_demo = cognitive_robot.plan_nav.station_demo:main',
         ],
     },
 )

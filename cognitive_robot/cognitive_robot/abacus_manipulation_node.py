@@ -31,9 +31,12 @@ from cognitive_robot_interfaces.srv import RunAbacus
 
 # ── Joint angle constants — tune these on the real robot (radians) ────────────
 SHOULDER_LIFT_WORK = 0.0    # shoulder lift angle held fixed throughout the sequence
-ELBOW_WORK         = -1.57  # elbow 90° forward: hovering at working height above pole
-ELBOW_UP           =  0.0   # elbow raised: gives operator space to place a ring
 WRIST_WORK         =  0.0   # wrist angle throughout (kept level)
+
+ELBOW_TRANSIT      =  0.0   # arm fully upright — safe to rotate between poles
+ELBOW_RECEIVE      = -0.7   # arm slightly raised (~40°) — operator places ring here
+ELBOW_WORK            = -1.57  # elbow 90° forward — hover/working height above pole
+SHOULDER_LIFT_TRANSIT = -0.5  # shoulder briefly dips forward to slide ring off arm
 
 # Seconds the controller has to reach each target position before we move on
 MOVE_SEC = 2
@@ -122,19 +125,23 @@ class AbacusManipulationNode(Node):
         Full ring-placement sequence for one abacus reading.
 
         For each pole (index 0–3):
-            1. Rotate shoulder_pan to the pole's angle.
-            2. Repeat <count> times:
-                a. Raise elbow — operator places ring on arm.
+            1. Raise arm to transit position (fully upright).
+            2. Rotate shoulder_pan to the pole's angle while upright.
+            3. Lower arm to working height.
+            4. Repeat <count> times:
+                a. Raise to receive position (slightly up) — operator places ring.
                 b. Press Enter to confirm.
-                c. Lower elbow — pushes ring down onto pole.
+                c. Tilt past working height (release) — ring slides off onto pole.
+                d. Return to working height.
+            5. Raise back to transit before moving to next pole.
 
         Args:
             time_digits: list of four ints, e.g. [1, 4, 3, 2]
         """
         self.get_logger().info(f'Starting abacus sequence — digits: {time_digits}')
 
-        # Move arm to working position: elbow 90° forward, shoulder centred
-        self._move_arm(0.0, SHOULDER_LIFT_WORK, ELBOW_WORK, WRIST_WORK)
+        # Start upright at centre so first rotation is safe
+        self._move_arm(0.0, SHOULDER_LIFT_WORK, ELBOW_TRANSIT, WRIST_WORK)
 
         for pole_idx, count in enumerate(time_digits):
             pan = POLE_PAN_ANGLES[pole_idx]
@@ -142,20 +149,32 @@ class AbacusManipulationNode(Node):
                 f'Pole {pole_idx + 1}/4  |  pan={math.degrees(pan):.0f}°  |  rings to place={count}'
             )
 
-            # Rotate to this pole while keeping elbow at working height
+            # Rotate to pole while arm is fully upright — avoids knocking poles
+            self._move_arm(pan, SHOULDER_LIFT_WORK, ELBOW_TRANSIT, WRIST_WORK)
+
+            # Lower to working height above the pole
             self._move_arm(pan, SHOULDER_LIFT_WORK, ELBOW_WORK, WRIST_WORK)
 
             for i in range(count):
                 self.get_logger().info(f'  Ring {i + 1}/{count}')
 
-                # Raise elbow so operator has room to place the ring on the arm
-                self._move_arm(pan, SHOULDER_LIFT_WORK, ELBOW_UP, WRIST_WORK)
+                # Raise to receive position — slightly up so operator can place ring
+                self._move_arm(pan, SHOULDER_LIFT_WORK, ELBOW_RECEIVE, WRIST_WORK)
 
-                # Wait for operator confirmation — blocks here until Enter is pressed
+                # Wait for operator to place ring and press Enter
                 input('  → Ring geplaatst? Druk Enter om door te gaan...')
 
-                # Lower elbow to push the ring down onto the pole
+                # Lower elbow to working height first
                 self._move_arm(pan, SHOULDER_LIFT_WORK, ELBOW_WORK, WRIST_WORK)
+
+                # Then dip shoulder so ring slides off onto the pole
+                self._move_arm(pan, SHOULDER_LIFT_TRANSIT, ELBOW_WORK, WRIST_WORK)
+
+                # Return shoulder to working position, ready for the next ring
+                self._move_arm(pan, SHOULDER_LIFT_WORK, ELBOW_WORK, WRIST_WORK)
+
+            # Raise back to transit before rotating to the next pole
+            self._move_arm(pan, SHOULDER_LIFT_WORK, ELBOW_TRANSIT, WRIST_WORK)
 
         # Return arm to neutral home position
         self._move_arm(0.0, 0.0, 0.0, 0.0)

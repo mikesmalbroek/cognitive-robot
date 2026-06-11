@@ -17,6 +17,7 @@ from cognitive_robot_interfaces.srv import ReadTime, DetectAbacus
 
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
+_MAPS_DIR = os.path.expanduser('~/mirte_ws/src/cognitive-robot/maps')
 
 # --------------------------------------------------------------------------- #
 # Files saved by your station recorder
@@ -36,8 +37,12 @@ DETECT_ABACUS_SERVICE_WAIT_TIMEOUT_SEC = 10.0
 
 # Retry parameters for send_goal_and_wait (Nav2 may reject the first goal if
 # the planner is still finishing activation right after the pose estimate is set).
-MAX_GOAL_RETRIES = 5
-GOAL_RETRY_DELAY_SEC = 2.0
+MAX_GOAL_RETRIES = 30
+GOAL_RETRY_DELAY_SEC = 3.0
+
+# Seconds to wait after the 2D pose estimate is set, giving AMCL time to converge
+# before the first navigation goal is sent.  Increase if WiFi is laggy.
+POSE_SETTLE_SEC = 40.0
 
 # Give the robot/camera a moment to stop vibrating after Nav2 reaches Station A.
 SETTLE_AT_STATION_A_SEC = 1.0
@@ -131,7 +136,7 @@ class StationClockMission(Node):
     def __init__(self):
         super().__init__("station_clock_mission")
 
-        self.declare_parameter('station_dir', _HERE)
+        self.declare_parameter('station_dir', _MAPS_DIR)
         self.station_dir = self.get_parameter('station_dir').get_parameter_value().string_value
 
         self._initial_pose_received = False
@@ -182,7 +187,12 @@ class StationClockMission(Node):
 
     def wait_for_nav2(self):
         self.get_logger().info("Waiting for Nav2 /navigate_to_pose action server...")
-        self.nav_client.wait_for_server()
+        while rclpy.ok():
+            ready = self.nav_client.wait_for_server(timeout_sec=1.0)
+            rclpy.spin_once(self, timeout_sec=0.0)
+            if ready:
+                break
+            self.get_logger().info("Still waiting for Nav2 action server...")
         self.get_logger().info("Nav2 action server is available.")
 
     def send_goal_and_wait(self, station_goal):
@@ -197,7 +207,6 @@ class StationClockMission(Node):
 
         goal_msg = NavigateToPose.Goal()
         goal_msg.pose.header.frame_id = frame_id
-        goal_msg.pose.header.stamp = self.get_clock().now().to_msg()
 
         goal_msg.pose.pose.position.x = x
         goal_msg.pose.pose.position.y = y
@@ -218,6 +227,7 @@ class StationClockMission(Node):
 
         goal_handle = None
         for attempt in range(1, MAX_GOAL_RETRIES + 1):
+            goal_msg.pose.header.stamp = self.get_clock().now().to_msg()
             send_goal_future = self.nav_client.send_goal_async(
                 goal_msg,
                 feedback_callback=self.feedback_callback
@@ -428,6 +438,11 @@ def main(args=None):
 
         mission.wait_for_nav2()
         mission.wait_for_initial_pose()
+
+        mission.get_logger().info(
+            f"Waiting {POSE_SETTLE_SEC:.0f} s for AMCL to converge before navigating..."
+        )
+        time.sleep(POSE_SETTLE_SEC)
 
         if not mission.wait_for_read_time_service():
             return

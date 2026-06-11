@@ -47,6 +47,9 @@ setup(
 
             # Phase 2 autonomous mission — navigate to Station A, read clock, go to Station B.
             'station_demo = cognitive_robot.plan_nav.station_demo:main',
+
+            # Republishes /odom topic as odom→base_link TF (needed when robot's TF is not received over WiFi).
+            'odom_tf_broadcaster = cognitive_robot.plan_nav.odom_tf_broadcaster:main',
         ],
     },
 )

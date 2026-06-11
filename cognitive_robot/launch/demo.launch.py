@@ -35,4 +35,11 @@ def generate_launch_description():
             output='screen',
         ),
 
+        Node(
+            package='cognitive_robot',
+            executable='abacus_manipulation_node',
+            name='abacus_manipulation_node',
+            output='screen',
+        ),
+
     ])

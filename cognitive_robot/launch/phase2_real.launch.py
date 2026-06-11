@@ -150,6 +150,7 @@ def generate_launch_description():
             output='screen',
             parameters=[{
                 'station_dir': MAPS_DIR,
+                'camera_topic': '/camera/color/image_raw',
             }],
         ),
 

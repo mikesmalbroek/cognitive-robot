@@ -12,6 +12,8 @@ from rclpy.action import ActionClient
 from nav2_msgs.action import NavigateToPose
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import PoseWithCovarianceStamped
+from rclpy.qos import qos_profile_sensor_data
+from sensor_msgs.msg import Image
 
 from cognitive_robot_interfaces.srv import ReadTime, DetectAbacus, RunAbacus
 
@@ -55,6 +57,12 @@ READ_TIME_SERVICE_WAIT_TIMEOUT_SEC = 20.0
 # Maximum time to wait for one OCR scan service call to finish.
 # This should be longer than read_time_service.py max_iterations * rotation/settle time.
 READ_TIME_CALL_TIMEOUT_SEC = 120.0
+
+# Camera topic used by read_time_service.py.
+CAMERA_TOPIC_DEFAULT = "/camera/color/image_raw"
+
+# Maximum time to wait for the first camera image before calling /read_time.
+CAMERA_FRAME_WAIT_TIMEOUT_SEC = 30.0
 
 
 def yaw_to_quaternion(yaw):
@@ -134,12 +142,23 @@ class StationClockMission(Node):
         self.declare_parameter('station_dir', _HERE)
         self.station_dir = self.get_parameter('station_dir').get_parameter_value().string_value
 
+        self.declare_parameter('camera_topic', CAMERA_TOPIC_DEFAULT)
+        self.camera_topic = self.get_parameter('camera_topic').get_parameter_value().string_value
+
         self._initial_pose_received = False
         self.create_subscription(
             PoseWithCovarianceStamped,
             '/initialpose',
             self._on_initial_pose,
             10,
+        )
+
+        self._camera_frame_received = False
+        self.create_subscription(
+            Image,
+            self.camera_topic,
+            self._on_camera_frame,
+            qos_profile_sensor_data,
         )
 
         self.nav_client = ActionClient(
@@ -172,6 +191,11 @@ class StationClockMission(Node):
             self._initial_pose_received = True
             self.get_logger().info("2D pose estimate received.")
 
+    def _on_camera_frame(self, msg):
+        if not self._camera_frame_received:
+            self._camera_frame_received = True
+            self.get_logger().info(f"Camera frame received on {self.camera_topic}.")
+
     def wait_for_initial_pose(self):
         self.get_logger().info(
             "Waiting for 2D pose estimate — "
@@ -180,6 +204,26 @@ class StationClockMission(Node):
         while rclpy.ok() and not self._initial_pose_received:
             rclpy.spin_once(self, timeout_sec=0.1)
         self.get_logger().info("Pose set. Starting mission.")
+
+    def wait_for_camera_frame(self):
+        self.get_logger().info(
+            f"Waiting for camera frames on {self.camera_topic} before calling /read_time..."
+        )
+
+        start_time = time.time()
+        while rclpy.ok() and not self._camera_frame_received:
+            rclpy.spin_once(self, timeout_sec=0.1)
+
+            elapsed = time.time() - start_time
+            if elapsed >= CAMERA_FRAME_WAIT_TIMEOUT_SEC:
+                self.get_logger().error(
+                    f"Timed out waiting for camera frame on {self.camera_topic} "
+                    f"after {CAMERA_FRAME_WAIT_TIMEOUT_SEC:.1f} s."
+                )
+                return False
+
+        self.get_logger().info("Camera stream is active.")
+        return True
 
     # ---------------------------------------------------------------------- #
     # Nav2 helpers
@@ -474,6 +518,9 @@ def main(args=None):
             f"Settling at Station A for {SETTLE_AT_STATION_A_SEC:.1f} s before OCR..."
         )
         time.sleep(SETTLE_AT_STATION_A_SEC)
+
+        if not mission.wait_for_camera_frame():
+            return
 
         time_found, time_digits = mission.call_read_time()
 

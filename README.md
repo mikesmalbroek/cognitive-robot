@@ -63,18 +63,18 @@ source install/setup.bash
 
 ## Division of work
 
-| Component                     | File(s)                                                                                                    | Owner |
-|-------------------------------|------------------------------------------------------------------------------------------------------------|-------|
-| Abacus manipulation           | `abacus_manipulation_node.py`                                                                              | Mike  |
-| Depth utilities               | `depth_utils.py`                                                                                           | Mike  |
-| Abacus detection              | `detect_abacus_service.py`                                                                                 | Mike  |
-| Station detection             | `detect_station_service.py`                                                                                | Mike  |
-| Clock OCR                     | `read_time_service.py`                                                                                     | Mike  |
-| Mapping & station recognition | `plan_nav`, `trial_depth.py`                                                                               | Ethan |
-| Mission orchestration         | `plan_nav`, `station_demo.py`                                                                              | Ethan |
-| SLAM & Nav2                   | `config/`                                                                                                  | Bas   |
+| Component                     | File(s)                                                                                                     | Owner |
+|-------------------------------|-------------------------------------------------------------------------------------------------------------|-------|
+| Abacus manipulation           | `abacus_manipulation_node.py`                                                                               | Mike  |
+| Depth utilities               | `depth_utils.py`                                                                                            | Mike  |
+| Abacus detection              | `detect_abacus_service.py`                                                                                  | Mike  |
+| Station detection             | `detect_station_service.py`                                                                                 | Mike  |
+| Clock OCR                     | `read_time_service.py`                                                                                      | Mike  |
+| Mapping & station recognition | `plan_nav/trial_depth.py`                                                                                   | Ethan |
+| Mission orchestration         | `plan_nav/station_demo.py`                                                                                  | Ethan |
+| SLAM & Nav2                   | `config/`                                                                                                   | Bas   |
 | Integration Gazebo & Robot    | `phase1_gazebo.launch.py`, `phase2_gazebo.launch.py` <br/> `phase1_real.launch.py`, `phase2_real.launch.py` | Bas |
-| Gazebo demo map               | `gazebo_map_load/`                                                                                         | Ethan |
+| Gazebo demo map               | `gazebo_map_load/`                                                                                          | Ethan |
 
 ---
 

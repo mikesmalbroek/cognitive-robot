@@ -90,6 +90,173 @@ flowchart LR
     AbacusFile --> Mission
 ```
 
+### Runtime Architecture Diagram
+
+```text
+================================================================================
+                    COGNITIVE ROBOT PHASE 1 / PHASE 2 SYSTEM
+================================================================================
+
+  +----------------------------- ROBOT / GAZEBO SENSORS -----------------------+
+  |                                                                            |
+  |  Front color camera        Depth camera          Laser / odom / TF         |
+  |  real: /camera/color/      /camera/depth/        /scan, /odom, TF tree     |
+  |        image_raw(/compressed) image_raw                                     |
+  |  sim : /camera/image_raw                                                    |
+  |                                                                            |
+  +----------+----------------------+------------------------+------------------+
+             |                      |                        |
+             |                      |                        |
+  +----------v----------+  +--------v---------+    +--------v------------------+
+  | COLOR PERCEPTION    |  | DEPTH UTILITIES  |    | MAPPING / NAVIGATION      |
+  |                     |  |                  |    |                           |
+  | read_time_service   |  | depth_utils.py   |    | slam_toolbox              |
+  | - EasyOCR clock     |  | - depth frame    |    | - builds Phase 1 map      |
+  | - rotates robot     |  | - camera_info    |    | - saves auto_map.*        |
+  |                     |  | - pixel -> 3D    |    |                           |
+  | detect_station      |  |                  |    | Nav2 + AMCL               |
+  | - ArUco marker      |  +--------+---------+    | - loads saved map         |
+  | - Station A/B ID    |           |              | - NavigateToPose action   |
+  |                     |           |              | - costmaps/controllers    |
+  | detect_abacus       |           |              +-------------+-------------+
+  | - Roboflow object   |           |                            |
+  | - bbox center       |           |                            |
+  +----------+----------+           |                            |
+             |                      |                            |
+             +----------+-----------+----------------------------+
+                        |
+                        v
+  +----------------------------------------------------------------------------+
+  |                          PHASE-SPECIFIC CONTROL                             |
+  |                                                                            |
+  |  Phase 1: trial_depth                                                       |
+  |  - manual keyboard drive                                                    |
+  |  - B key -> /detect_station -> station_a/b_location.yaml                    |
+  |  - N key -> /detect_abacus  -> abacus_location.yaml                         |
+  |  - V key -> map_saver_cli -> auto_map.yaml + auto_map.pgm                   |
+  |                                                                            |
+  |  Phase 2: station_demo                                                      |
+  |  - waits for RViz /initialpose and Nav2 readiness                           |
+  |  - navigates to Station A                                                   |
+  |  - calls /read_time, falls back to [1, 2, 0, 1] on OCR failure              |
+  |  - navigates to Station B or abacus goal                                    |
+  |  - calls /abacus/run_sequence and final /detect_abacus check                |
+  |                                                                            |
+  +-----------------------------+----------------------------------------------+
+                                |
+                                v
+  +----------------------------- ROBOT OUTPUTS --------------------------------+
+  |  /mirte_base_controller/cmd_vel or Gazebo cmd_vel                           |
+  |  /mirte_master_arm_controller/joint_trajectory                              |
+  +----------------------------------------------------------------------------+
+```
+
+### Node Communication Diagram
+
+```text
+PHASE 1: mapping + station registration
+
+  camera color/depth/info          scan + odom + TF
+          |                              |
+          v                              v
+  +------------------+             +----------------+
+  | perception nodes |             | slam_toolbox   |
+  |                  |             | live map build |
+  | /detect_station  |             +--------+-------+
+  | /detect_abacus   |                      |
+  +--------+---------+                      |
+           ^                                |
+           | service calls                  |
+           |                                v
+  +--------+--------------------------------------------------+
+  | trial_depth                                               |
+  | - subscribes camera for manual display                    |
+  | - publishes velocity commands                             |
+  | - calls detection services                                |
+  | - transforms camera detections into map frame             |
+  | - runs map_saver_cli                                      |
+  +--------+----------------------+---------------------------+
+           |                      |
+           v                      v
+  station_a_location.yaml   auto_map.yaml / auto_map.pgm
+  station_b_location.yaml
+  optional abacus_location.yaml
+
+
+PHASE 2: autonomous mission
+
+  auto_map.yaml / auto_map.pgm       station/abacus YAML files
+              |                              |
+              v                              v
+  +-------------------------+        +----------------------+
+  | Nav2 bringup + AMCL     |        | station_demo         |
+  | - map server            |<------>| - mission sequence   |
+  | - planner/controller    | action | - service clients    |
+  | - costmaps              |        | - fallback time      |
+  +-----------+-------------+        +----+------------+----+
+              |                           |            |
+              v                           |            |
+       base cmd_vel                       |            |
+                                          |            |
+                          +---------------v--+      +--v-------------------+
+                          | /read_time       |      | /detect_abacus       |
+                          | OCR + scan turn  |      | Roboflow + depth     |
+                          +---------------+--+      +----------------------+
+                                          |
+                                          v
+                              +-----------+----------------+
+                              | /abacus/run_sequence       |
+                              | abacus_manipulation_node   |
+                              | arm joint trajectories     |
+                              +----------------------------+
+```
+
+### Code Structure Diagram
+
+```text
+cognitive-robot/
+|
+|-- cognitive_robot/                         main ROS 2 Python package
+|   |
+|   |-- launch/
+|   |   |-- phase1_gazebo.launch.py          Gazebo mapping + registration
+|   |   |-- phase1_real.launch.py            Real robot mapping + registration
+|   |   |-- phase2_gazebo.launch.py          Gazebo autonomous mission
+|   |   `-- phase2_real.launch.py            Real robot autonomous mission
+|   |
+|   |-- cognitive_robot/
+|   |   |-- plan_nav/
+|   |   |   |-- trial_depth.py               Phase 1 manual mapper/register
+|   |   |   `-- station_demo.py              Phase 2 mission coordinator
+|   |   |
+|   |   |-- detect_station_service.py        ArUco station detection service
+|   |   |-- detect_abacus_service.py         Roboflow abacus detection service
+|   |   |-- read_time_service.py             EasyOCR clock reading service
+|   |   |-- depth_utils.py                   shared depth/camera-info logic
+|   |   |-- abacus_manipulation_node.py      abacus arm sequence service
+|   |   `-- odom_tf_broadcaster.py           real-robot odom->base_link TF
+|   |
+|   `-- test/                               service/unit tests
+|
+|-- cognitive_robot_interfaces/              custom service definitions
+|   `-- srv/
+|       |-- DetectStation.srv
+|       |-- DetectAbacus.srv
+|       |-- ReadTime.srv
+|       `-- RunAbacus.srv
+|
+|-- maps/                                    saved Phase 1 outputs
+|   |-- auto_map.yaml / auto_map.pgm
+|   |-- station_a_location.yaml
+|   |-- station_b_location.yaml
+|   `-- abacus_location.yaml
+|
+|-- config/                                  SLAM/Nav2 parameter files
+|-- gazebo_map_load/                         Gazebo station/world assets
+|-- commands_documents/                      run/debug command notes
+`-- local_script_tests/                      offline perception experiments
+```
+
 ## Phase 1: Manual Mapping and Station Registration
 
 ### Purpose
@@ -136,6 +303,23 @@ ros2 launch cognitive_robot phase1_real.launch.py
 | TF tree | `trial_depth` | Converts detections from camera frame into the SLAM `map` frame. |
 | Laser/scan and odometry | SLAM Toolbox | Builds the map and estimates robot pose during mapping. |
 | Keyboard input | `trial_depth` | Manual control and trigger commands. |
+
+On the real robot, the launch file starts the perception services on the
+compressed color stream:
+
+```text
+/camera/color/image_raw/compressed
+```
+
+`read_time_service`, `detect_station_service`, and `detect_abacus_service`
+select their subscription message type from the configured topic. If the topic
+ends in `/compressed`, they subscribe to `sensor_msgs/CompressedImage` and
+decode the JPEG payload with OpenCV. Otherwise, they subscribe to raw
+`sensor_msgs/Image`.
+
+`trial_depth` still uses the raw color topic for its live manual-driving display
+in Phase 1. The service calls used by `trial_depth` can use compressed color
+frames independently.
 
 ### Phase 1 Keyboard Controls
 
@@ -280,8 +464,52 @@ need station detection during Phase 2 and disabling it reduces camera bandwidth.
 | `station_b_location.yaml` | Phase 1 station registration | `station_demo` fallback for Station B. |
 | `abacus_location.yaml` | Optional Phase 1 abacus registration | Preferred Station B/abacus goal for `station_demo`. |
 | Initial pose estimate | User in RViz2 | AMCL and `station_demo` start gate. |
-| Camera stream | Robot or Gazebo | `/read_time` and `/detect_abacus`. |
+| Compressed color camera stream on real robot | Robot | `/read_time` and `/detect_abacus`. |
+| Raw color camera stream in Gazebo | Gazebo | `/read_time`, `/detect_abacus`, and Gazebo-only `/detect_station`. |
+| Raw depth stream | Robot or Gazebo | `/detect_abacus`; `/detect_station` when that service is launched. |
 | Nav2 action server | Nav2 | `station_demo` sends navigation goals. |
+
+### Camera Compression and Bandwidth
+
+The real robot launches use compressed color images for the perception services:
+
+```text
+/camera/color/image_raw/compressed
+```
+
+This is a bandwidth fix for running perception over WiFi. Raw RGB camera frames
+are large, and Phase 2 also needs Nav2 traffic, laser scans, TF, odometry, and
+selected depth frames to arrive reliably. The compressed topic keeps OCR and
+object detection fed with color images while leaving more bandwidth for
+navigation.
+
+The compression handling lives inside the perception nodes:
+
+- `read_time_service`
+- `detect_station_service`
+- `detect_abacus_service`
+
+Each node reads its `camera_topic` parameter. Topics ending in `/compressed`
+use `sensor_msgs/CompressedImage` and `cv2.imdecode(...)`; other topics use raw
+`sensor_msgs/Image` through `CvBridge`. This means the same service code works
+with real robot compressed color topics and Gazebo raw color topics.
+
+Depth is not compressed in this architecture. `DepthCameraMixin` subscribes to
+the raw depth image and camera info so detections can be converted from pixels
+into metric 3D positions. Because raw depth is expensive over WiFi, the real
+Phase 2 launch only starts the depth-using services that the mission actually
+needs.
+
+Current real-robot Phase 2 bandwidth choices:
+
+- `/read_time` uses compressed color only.
+- `/detect_abacus` uses compressed color plus raw depth, because final abacus
+  confirmation and metric position depend on depth.
+- `/detect_station` is disabled in `phase2_real.launch.py`, because
+  `station_demo` does not call it during the autonomous mission and it would
+  otherwise keep another raw depth subscription active.
+- Gazebo Phase 2 can still launch `/detect_station`, because simulated topics
+  are local and do not have the same WiFi bottleneck.
 
 ### Phase 2 Mission Timeline
 
@@ -514,11 +742,12 @@ Important runtime behavior:
 | Area | Gazebo | Real robot |
 | --- | --- | --- |
 | Time source | `use_sim_time=true` | `use_sim_time=false` |
-| Camera topic | Usually `/camera/image_raw` | Usually `/camera/color/image_raw` or compressed variant |
+| Camera topic | Usually `/camera/image_raw` | Perception services use `/camera/color/image_raw/compressed`; manual Phase 1 display can use `/camera/color/image_raw` |
 | Velocity topic | `/mirte_base_controller/cmd_vel_unstamped` in Gazebo launch | `/mirte_base_controller/cmd_vel` on robot |
 | World objects | Spawned into Gazebo from `gazebo_map_load` | Physical environment |
 | Domain ID | Not set by Gazebo launch | `ROS_DOMAIN_ID=4` in real launch |
 | TF/topic relays | Usually not needed | Real launch adds TF and topic relays for Nav2 compatibility |
+| Phase 2 station detector | Usually launched | Disabled in real Phase 2 to avoid an unused raw-depth subscriber |
 
 ## File-Level Architecture
 

@@ -1,3 +1,11 @@
+# =============================================================================
+# nav2_params_mirte.yaml  —  Nav2 config (Phase 2, GAZEBO)
+# Copied from stock:
+#   /opt/ros/humble/share/nav2_bringup/params/nav2_params.yaml
+# [CHANGE] = parameter changed from that stock file.  (ctrl-F "[CHANGE]")
+# Changes: base_frame_id, robot_radius (x2), inflation_radius (x2),
+#          raytrace_min_range (x2), obstacle_min_range (x2).
+# =============================================================================
 amcl:
   ros__parameters:
     use_sim_time: True
@@ -6,7 +14,7 @@ amcl:
     alpha3: 0.2
     alpha4: 0.2
     alpha5: 0.2
-    base_frame_id: "base_link"
+    base_frame_id: "base_link"    # [CHANGE] stock "base_footprint" -> "base_link" (Mirte TF)
     beam_skip_distance: 0.5
     beam_skip_error_threshold: 0.9
     beam_skip_threshold: 0.3
@@ -192,12 +200,12 @@ local_costmap:
       width: 3
       height: 3
       resolution: 0.05
-      robot_radius: 0.28
+      robot_radius: 0.28    # [CHANGE] stock 0.22 -> 0.28 (Mirte is physically bigger)
       plugins: ["voxel_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.33
+        inflation_radius: 0.33    # [CHANGE] stock 0.55 -> 0.33 (less padding; fit through tighter gaps)
       voxel_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
         enabled: True
@@ -215,9 +223,9 @@ local_costmap:
           marking: True
           data_type: "LaserScan"
           raytrace_max_range: 3.0
-          raytrace_min_range: 0.15
+          raytrace_min_range: 0.15    # [CHANGE] stock 0.0 -> 0.15 (ignore scan returns within 15cm)
           obstacle_max_range: 2.5
-          obstacle_min_range: 0.15
+          obstacle_min_range: 0.15    # [CHANGE] stock 0.0 -> 0.15 (ignore scan returns within 15cm)
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
@@ -231,7 +239,7 @@ global_costmap:
       global_frame: map
       robot_base_frame: base_link
       use_sim_time: True
-      robot_radius: 0.28
+      robot_radius: 0.28    # [CHANGE] stock 0.22 -> 0.28 (Mirte is physically bigger)
       resolution: 0.05
       track_unknown_space: true
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
@@ -246,16 +254,16 @@ global_costmap:
           marking: True
           data_type: "LaserScan"
           raytrace_max_range: 3.0
-          raytrace_min_range: 0.15
+          raytrace_min_range: 0.15    # [CHANGE] stock 0.0 -> 0.15 (ignore scan returns within 15cm)
           obstacle_max_range: 2.5
-          obstacle_min_range: 0.15
+          obstacle_min_range: 0.15    # [CHANGE] stock 0.0 -> 0.15 (ignore scan returns within 15cm)
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.33
+        inflation_radius: 0.33    # [CHANGE] stock 0.55 -> 0.33 (less padding; fit through tighter gaps)
       always_send_full_costmap: True
 
 map_server:

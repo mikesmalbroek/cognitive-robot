@@ -1,3 +1,10 @@
+# =============================================================================
+# mapper_params_online_async.yaml  —  SLAM Toolbox config (Phase 1)
+# Copied from stock:
+#   /opt/ros/humble/share/slam_toolbox/config/mapper_params_online_async.yaml
+# [CHANGE] = parameter changed from that stock file.  (ctrl-F "[CHANGE]")
+# There is exactly ONE change: base_frame (see below).
+# =============================================================================
 slam_toolbox:
   ros__parameters:
 
@@ -12,7 +19,7 @@ slam_toolbox:
     # ROS Parameters
     odom_frame: odom
     map_frame: map
-    base_frame: base_link
+    base_frame: base_link    # [CHANGE] stock = "base_footprint"; set to base_link to match the Mirte's TF tree (the ONLY change from stock)
     scan_topic: /scan
     use_map_saver: true
     mode: mapping #localization

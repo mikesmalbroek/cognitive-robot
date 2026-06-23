@@ -1,12 +1,27 @@
+# =============================================================================
+# nav2_params_mirte_real.yaml  —  Nav2 config (Phase 2, REAL ROBOT)
+# Derived from nav2_params_mirte.yaml (the Gazebo file).
+# Two searchable tag types:
+#   [CHANGE]       = changed from stock nav2_bringup (robot-fit; shared with the
+#                    Gazebo file): base_frame_id, robot_radius, inflation_radius,
+#                    raytrace_min_range, obstacle_min_range.
+#   [CHANGE-REAL]  = changed from the Gazebo file, specific to the real robot:
+#                    - use_sim_time: false  (on EVERY node; Gazebo/stock = True)
+#                    - transform_tolerance: 1.5  (controller + behavior servers)
+#                      = the WiFi stale-TF fix (Gazebo: 0.2 / 0.1).
+# ctrl-F "[CHANGE]" finds all of them; "[CHANGE-REAL]" finds only the real-only.
+# NOTE: use_sim_time: false repeats on every node below; only this first one is
+#       tagged to avoid clutter — they are all the same change.
+# =============================================================================
 amcl:
   ros__parameters:
-    use_sim_time: false
+    use_sim_time: false    # [CHANGE-REAL] real robot uses the wall clock (Gazebo/stock = True); set false on every node below
     alpha1: 0.2
     alpha2: 0.2
     alpha3: 0.2
     alpha4: 0.2
     alpha5: 0.2
-    base_frame_id: "base_link"
+    base_frame_id: "base_link"    # [CHANGE] stock "base_footprint" -> "base_link" (Mirte TF)
     beam_skip_distance: 0.5
     beam_skip_error_threshold: 0.9
     beam_skip_threshold: 0.3
@@ -149,7 +164,7 @@ controller_server:
       sim_time: 1.7
       linear_granularity: 0.05
       angular_granularity: 0.025
-      transform_tolerance: 1.5
+      transform_tolerance: 1.5    # [CHANGE-REAL] Gazebo 0.2 -> 1.5: tolerate late map->odom TF over WiFi (controller)
       xy_goal_tolerance: 0.25
       trans_stopped_velocity: 0.25
       short_circuit_trajectory_evaluation: True
@@ -178,12 +193,12 @@ local_costmap:
       width: 3
       height: 3
       resolution: 0.05
-      robot_radius: 0.28
+      robot_radius: 0.28    # [CHANGE] stock 0.22 -> 0.28 (Mirte is physically bigger)
       plugins: ["voxel_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.33
+        inflation_radius: 0.33    # [CHANGE] stock 0.55 -> 0.33 (less padding; fit through tighter gaps)
       voxel_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
         enabled: True
@@ -201,9 +216,9 @@ local_costmap:
           marking: True
           data_type: "LaserScan"
           raytrace_max_range: 3.0
-          raytrace_min_range: 0.15
+          raytrace_min_range: 0.15    # [CHANGE] stock 0.0 -> 0.15 (ignore scan returns within 15cm)
           obstacle_max_range: 2.5
-          obstacle_min_range: 0.15
+          obstacle_min_range: 0.15    # [CHANGE] stock 0.0 -> 0.15 (ignore scan returns within 15cm)
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
@@ -217,7 +232,7 @@ global_costmap:
       global_frame: map
       robot_base_frame: base_link
       use_sim_time: false
-      robot_radius: 0.28
+      robot_radius: 0.28    # [CHANGE] stock 0.22 -> 0.28 (Mirte is physically bigger)
       resolution: 0.05
       track_unknown_space: true
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
@@ -232,16 +247,16 @@ global_costmap:
           marking: True
           data_type: "LaserScan"
           raytrace_max_range: 3.0
-          raytrace_min_range: 0.15
+          raytrace_min_range: 0.15    # [CHANGE] stock 0.0 -> 0.15 (ignore scan returns within 15cm)
           obstacle_max_range: 2.5
-          obstacle_min_range: 0.15
+          obstacle_min_range: 0.15    # [CHANGE] stock 0.0 -> 0.15 (ignore scan returns within 15cm)
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.33
+        inflation_radius: 0.33    # [CHANGE] stock 0.55 -> 0.33 (less padding; fit through tighter gaps)
       always_send_full_costmap: True
 
 map_server:
@@ -296,7 +311,7 @@ behavior_server:
       plugin: "nav2_behaviors/AssistedTeleop"
     global_frame: odom
     robot_base_frame: base_link
-    transform_tolerance: 1.5
+    transform_tolerance: 1.5    # [CHANGE-REAL] Gazebo 0.1 -> 1.5: tolerate late TF over WiFi (behavior server)
     use_sim_time: false
     simulate_ahead_time: 2.0
     max_rotational_vel: 1.0
